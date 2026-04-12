@@ -130,7 +130,7 @@ export default function SettingsPage() {
         setTokenNotice({ kind: "info", text: "Modo Web: Las llamadas a Discogs pasarán por tu IP pública sin proxy local." });
       } else {
         try {
-          const state = await loadDiscogsToken();
+          const state = await loadDiscogsToken(session.user.id);
           if (active) {
             setToken(state.token);
             setHasStoredToken(state.hasToken);
@@ -214,7 +214,10 @@ export default function SettingsPage() {
 
     setSavingToken(true);
     try {
-      await saveDiscogsToken(token);
+      if (!userId) {
+        throw new Error("No se pudo identificar al usuario actual.");
+      }
+      await saveDiscogsToken(userId, token);
       setHasStoredToken(token.trim().length > 0);
       setTokenNotice({ kind: "success", text: "Token guardado en el llavero seguro." });
     } catch (error) {
@@ -230,7 +233,10 @@ export default function SettingsPage() {
 
     setSavingToken(true);
     try {
-      await deleteDiscogsToken();
+      if (!userId) {
+        throw new Error("No se pudo identificar al usuario actual.");
+      }
+      await deleteDiscogsToken(userId);
       setToken("");
       setHasStoredToken(false);
       setTokenNotice({ kind: "success", text: "Token eliminado del sistema." });

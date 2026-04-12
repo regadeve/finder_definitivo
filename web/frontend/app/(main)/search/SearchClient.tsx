@@ -217,6 +217,11 @@ export default function FinderClient() {
   }
 
   const start = useCallback(async (overrideFilters?: SearchFiltersPayload) => {
+    if (!userId) {
+      setStatus("No se pudo identificar tu usuario. Vuelve a iniciar sesion.");
+      return;
+    }
+
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -238,6 +243,7 @@ export default function FinderClient() {
 
     try {
       await startSearchStream({
+        userId,
         filters,
         signal: controller.signal,
         onStatus: (p) => {

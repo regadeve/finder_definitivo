@@ -62,6 +62,7 @@ type SearchEventEnvelope = {
 };
 
 type SearchStreamOptions = {
+  userId: string;
   filters: SearchFiltersPayload;
   signal: AbortSignal;
   onStatus: (payload: StreamPayload) => void;
@@ -149,7 +150,7 @@ async function startProxySearchStream({ filters, signal, onStatus, onItem, onDon
   }
 }
 
-async function startDesktopSearchStream({ filters, signal, onStatus, onItem, onDone }: SearchStreamOptions) {
+async function startDesktopSearchStream({ userId, filters, signal, onStatus, onItem, onDone }: SearchStreamOptions) {
   return new Promise<void>(async (resolve, reject) => {
     let finished = false;
     let searchId = "";
@@ -203,7 +204,7 @@ async function startDesktopSearchStream({ filters, signal, onStatus, onItem, onD
     signal.addEventListener("abort", abortHandler, { once: true });
 
     try {
-      searchId = await invoke<string>("start_discogs_search", { filters });
+      searchId = await invoke<string>("start_discogs_search", { userId, filters });
     } catch (error) {
       signal.removeEventListener("abort", abortHandler);
       unlisten();
