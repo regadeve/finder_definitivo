@@ -48,6 +48,7 @@ struct SearchFilters {
     max_copias_venta: i64,
     tope_resultados: i64,
     youtube_status: String,
+    not_on_label_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -481,6 +482,10 @@ fn build_search_params(filters: &SearchFilters) -> Vec<(String, String)> {
         }
     }
 
+    if filters.not_on_label_only {
+        params.push(("label".to_string(), "Not On Label".to_string()));
+    }
+
     params
 }
 
@@ -493,6 +498,10 @@ fn upsert_query_param(params: &mut Vec<(String, String)>, key: &str, value: Stri
 }
 
 fn passes_details(details: &Value, filters: &SearchFilters) -> bool {
+    if filters.not_on_label_only && !is_not_on_label_release(details) {
+        return false;
+    }
+
     let have = extract_have(details);
     if have < filters.have_min {
         return false;
@@ -602,6 +611,22 @@ fn passes_details(details: &Value, filters: &SearchFilters) -> bool {
     }
 
     true
+}
+
+fn is_not_on_label_release(details: &Value) -> bool {
+    details
+        .get("labels")
+        .and_then(|value| value.as_array())
+        .map(|labels| {
+            labels.iter().any(|label| {
+                label
+                    .get("name")
+                    .and_then(|value| value.as_str())
+                    .map(|name| name.trim().to_lowercase().starts_with("not on label"))
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
 }
 
 fn build_card(item: &Value, details: &Value) -> SearchCard {

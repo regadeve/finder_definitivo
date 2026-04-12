@@ -42,6 +42,7 @@ let state: SearchSessionState = {
     max_copias_venta: 0,
     tope_resultados: 0,
     youtube_status: "Todos",
+    not_on_label_only: false,
   },
   running: false,
   status: "Ajusta los filtros arriba y busca.",
