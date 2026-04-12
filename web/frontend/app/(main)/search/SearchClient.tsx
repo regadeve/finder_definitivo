@@ -1,24 +1,21 @@
 "use client";
 
-import { Suspense, useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { Suspense, useState, useMemo, useEffect, useCallback, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { STYLES } from "@/lib/supabase/discogs/styles";
 import { createClient } from "@/lib/supabase/client";
 import {
   getSearchRuntimeLabel,
-  startSearchStream,
   type SearchFiltersPayload,
-  type SearchCard,
 } from "@/lib/discogs/search-stream";
 import { openDiscogsRelease, openGoogleSearch } from "@/lib/discogs/url";
 import {
   fetchUserReleaseStates,
   upsertUserReleaseState,
-  type ReleaseCardPayload,
   type UserReleaseState,
 } from "@/lib/supabase/user-releases";
-import { insertUserSearch, updateUserSearch } from "@/lib/supabase/user-searches";
+import { getSearchSessionState, setSearchSessionFilters, startSearchSession, stopSearchSession, subscribeSearchSession } from "@/lib/search/session";
 
 const GENRES = ["Electronic", "Rock", "Jazz", "Funk / Soul", "Hip Hop", "Pop", "Classical", "Reggae", "Blues", "Latin"];
 const FORMATS = ["Vinyl", "CD", "Cassette", "File", "CDr", "DVD", "Box Set", "All Media", "LP", '7"', '12"', '10"', "Album", "Single", "EP", "Compilation", "Promo", "Limited Edition", "Reissue", "Remastered", "Mono", "Stereo", "White Label", "Test Pressing", "Mini-Album", "Maxi-Single", "Picture Disc", "Flexi-disc", "Shellac", "Blu-ray", "SACD", "VHS", "DVD-Video"];
@@ -120,43 +117,36 @@ export default function FinderClient() {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const searchParams = useSearchParams();
+  const initialFilters = getSearchSessionState().filters;
 
   const [userId, setUserId] = useState<string | null>(null);
   
   // Filtros
-  const [yearStart, setYearStart] = useState(1995);
-  const [yearEnd, setYearEnd] = useState(1995);
-  const [haveMin, setHaveMin] = useState(0);
-  const [haveMax, setHaveMax] = useState(80);
-  const [wantMin, setWantMin] = useState(0);
-  const [wantMax, setWantMax] = useState(0);
-  const [maxVersions, setMaxVersions] = useState(2);
-  const [countriesSelected, setCountriesSelected] = useState<string[]>([]);
-  const [formatsSelected, setFormatsSelected] = useState<string[]>([]);
-  const [typeSelected, setTypeSelected] = useState("Todos");
-  const [youtubeStatus, setYoutubeStatus] = useState("Todos");
-  const [genres, setGenres] = useState<string[]>(["Electronic"]);
-  const [styles, setStyles] = useState<string[]>(["EBM"]);
-  const [strictGenre, setStrictGenre] = useState(false);
-  const [strictStyle, setStrictStyle] = useState(false);
-  const [sinAnyo, setSinAnyo] = useState(false);
-  const [soloEnVenta, setSoloEnVenta] = useState(false);
-  const [precioMinimo, setPrecioMinimo] = useState(0);
-  const [precioMaximo, setPrecioMaximo] = useState(0);
-  const [maxCopiasVenta, setMaxCopiasVenta] = useState(0);
-  const [topeResultados, setTopeResultados] = useState(0);
+  const [yearStart, setYearStart] = useState(initialFilters.year_start);
+  const [yearEnd, setYearEnd] = useState(initialFilters.year_end);
+  const [haveMin, setHaveMin] = useState(initialFilters.have_min);
+  const [haveMax, setHaveMax] = useState(initialFilters.have_max);
+  const [wantMin, setWantMin] = useState(initialFilters.want_min);
+  const [wantMax, setWantMax] = useState(initialFilters.want_max);
+  const [maxVersions, setMaxVersions] = useState(initialFilters.max_versions);
+  const [countriesSelected, setCountriesSelected] = useState<string[]>(initialFilters.countries_selected);
+  const [formatsSelected, setFormatsSelected] = useState<string[]>(initialFilters.formats_selected);
+  const [typeSelected, setTypeSelected] = useState(initialFilters.type_selected);
+  const [youtubeStatus, setYoutubeStatus] = useState(initialFilters.youtube_status);
+  const [genres, setGenres] = useState<string[]>(initialFilters.genres);
+  const [styles, setStyles] = useState<string[]>(initialFilters.styles);
+  const [strictGenre, setStrictGenre] = useState(initialFilters.strict_genre);
+  const [strictStyle, setStrictStyle] = useState(initialFilters.strict_style);
+  const [sinAnyo, setSinAnyo] = useState(initialFilters.sin_anyo);
+  const [soloEnVenta, setSoloEnVenta] = useState(initialFilters.solo_en_venta);
+  const [precioMinimo, setPrecioMinimo] = useState(initialFilters.precio_minimo);
+  const [precioMaximo, setPrecioMaximo] = useState(initialFilters.precio_maximo);
+  const [maxCopiasVenta, setMaxCopiasVenta] = useState(initialFilters.max_copias_venta);
+  const [topeResultados, setTopeResultados] = useState(initialFilters.tope_resultados);
 
-  // Search State
-  const [running, setRunning] = useState(false);
-  const [status, setStatus] = useState("Ajusta los filtros arriba y busca.");
-  const [processedCount, setProcessedCount] = useState(0);
-  const [foundCount, setFoundCount] = useState(0);
-  const [pageInfo, setPageInfo] = useState({ page: 0, total: 0 });
-  const [items, setItems] = useState<SearchCard[]>([]);
+  const searchSession = useSyncExternalStore(subscribeSearchSession, getSearchSessionState, getSearchSessionState);
+  const { running, status, processedCount, foundCount, pageInfo, items } = searchSession;
   const [releaseStates, setReleaseStates] = useState<Record<string, UserReleaseState>>({});
-  
-  const abortRef = useRef<AbortController | null>(null);
-  const searchHistoryIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -169,10 +159,6 @@ export default function FinderClient() {
     return () => { active = false; };
   }, [supabase, router]);
   
-  useEffect(() => {
-    return () => abortRef.current?.abort();
-  }, []);
-
   useEffect(() => {
     const uniqueUris = Array.from(new Set(items.map((item) => item.uri).filter(Boolean)));
     const missingUris = uniqueUris.filter((uri) => !(uri in releaseStates));
@@ -206,74 +192,24 @@ export default function FinderClient() {
   }
 
   function stop() {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setRunning(false);
-    setStatus("Búsqueda detenida.");
-    if (searchHistoryIdRef.current) {
-      void updateUserSearch(supabase, searchHistoryIdRef.current, { status: "aborted", result_count: foundCount });
-      searchHistoryIdRef.current = null;
-    }
+    void stopSearchSession(supabase);
   }
 
   const start = useCallback(async (overrideFilters?: SearchFiltersPayload) => {
     if (!userId) {
-      setStatus("No se pudo identificar tu usuario. Vuelve a iniciar sesion.");
       return;
     }
 
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setItems([]); setReleaseStates({});
-    setRunning(true); setProcessedCount(0); setFoundCount(0); setPageInfo({ page: 0, total: 0 });
-    setStatus("Conectando con Discogs...");
-
     const filters = overrideFilters ?? normalizeFilters({ year_start: yearStart, year_end: yearEnd, have_min: haveMin, have_max: haveMax, want_min: wantMin, want_max: wantMax, max_versions: maxVersions, countries_selected: countriesSelected, formats_selected: formatsSelected, type_selected: typeSelected, genres, styles, strict_genre: strictGenre, strict_style: strictStyle, sin_anyo: sinAnyo, solo_en_venta: soloEnVenta, precio_minimo: precioMinimo, precio_maximo: precioMaximo, max_copias_venta: maxCopiasVenta, tope_resultados: topeResultados, youtube_status: youtubeStatus });
-
-    searchHistoryIdRef.current = null;
-    if (userId) {
-      try {
-        searchHistoryIdRef.current = await insertUserSearch(supabase, userId, filters);
-      } catch {
-        // keep search running even if history table is missing
-      }
-    }
-
-    try {
-      await startSearchStream({
-        userId,
-        filters,
-        signal: controller.signal,
-        onStatus: (p) => {
-          setPageInfo({ page: p.page ?? 0, total: p.total_pages ?? 0 });
-          setFoundCount(p.found ?? 0); setProcessedCount(p.processed ?? 0);
-          setStatus(`Página ${p.page}/${p.total_pages} · procesados ${p.processed} · encontrados ${p.found}`);
-        },
-        onItem: (p) => { if (p.card) setItems(prev => [...prev, p.card as SearchCard]); },
-        onDone: (p) => {
-          setFoundCount(p.found ?? 0);
-          setStatus(`Terminado · ${p.found} resultados.`);
-          setRunning(false);
-          abortRef.current = null;
-          if (searchHistoryIdRef.current) {
-            void updateUserSearch(supabase, searchHistoryIdRef.current, { status: "completed", result_count: p.found ?? 0 });
-            searchHistoryIdRef.current = null;
-          }
-        },
-      });
-    } catch (e) {
-      if (!controller.signal.aborted) {
-        setStatus("Error de conexión con Discogs.");
-        if (searchHistoryIdRef.current) {
-          void updateUserSearch(supabase, searchHistoryIdRef.current, { status: "failed", result_count: foundCount });
-          searchHistoryIdRef.current = null;
-        }
-      }
-      setRunning(false); abortRef.current = null;
+      setSearchSessionFilters(filters);
+      void startSearchSession(supabase, userId, filters);
+      return;
     }
   }, [yearStart, yearEnd, haveMin, haveMax, wantMin, wantMax, maxVersions, countriesSelected, formatsSelected, typeSelected, genres, styles, strictGenre, strictStyle, sinAnyo, soloEnVenta, precioMinimo, precioMaximo, maxCopiasVenta, topeResultados, youtubeStatus, userId, supabase, foundCount]);
+
+  useEffect(() => {
+    setSearchSessionFilters(normalizeFilters({ year_start: yearStart, year_end: yearEnd, have_min: haveMin, have_max: haveMax, want_min: wantMin, want_max: wantMax, max_versions: maxVersions, countries_selected: countriesSelected, formats_selected: formatsSelected, type_selected: typeSelected, genres, styles, strict_genre: strictGenre, strict_style: strictStyle, sin_anyo: sinAnyo, solo_en_venta: soloEnVenta, precio_minimo: precioMinimo, precio_maximo: precioMaximo, max_copias_venta: maxCopiasVenta, tope_resultados: topeResultados, youtube_status: youtubeStatus }));
+  }, [yearStart, yearEnd, haveMin, haveMax, wantMin, wantMax, maxVersions, countriesSelected, formatsSelected, typeSelected, genres, styles, strictGenre, strictStyle, sinAnyo, soloEnVenta, precioMinimo, precioMaximo, maxCopiasVenta, topeResultados, youtubeStatus]);
 
   useEffect(() => {
     const rawFilters = searchParams.get("savedFilters");
@@ -326,6 +262,8 @@ export default function FinderClient() {
             <div><FieldLabel>Año fin</FieldLabel><TextInput type="number" value={yearEnd} onChange={e => setYearEnd(Number(e.target.value))} disabled={sinAnyo}/></div>
             <div><FieldLabel>Have min</FieldLabel><TextInput type="number" value={haveMin} onChange={e => setHaveMin(Number(e.target.value))} /></div>
             <div><FieldLabel>Have max</FieldLabel><TextInput type="number" value={haveMax} onChange={e => setHaveMax(Number(e.target.value))} /></div>
+            <div><FieldLabel>Want min</FieldLabel><TextInput type="number" value={wantMin} onChange={e => setWantMin(Number(e.target.value))} /></div>
+            <div><FieldLabel>Want max</FieldLabel><TextInput type="number" value={wantMax} onChange={e => setWantMax(Number(e.target.value))} /></div>
              <div><FieldLabel>Max versiones</FieldLabel><TextInput type="number" value={maxVersions} onChange={e => setMaxVersions(Number(e.target.value))} /></div>
               <div>
                 <FieldLabel>Tipo</FieldLabel>
