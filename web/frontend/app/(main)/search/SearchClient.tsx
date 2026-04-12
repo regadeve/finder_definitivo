@@ -356,8 +356,11 @@ export default function FinderClient() {
                       <div className="mb-2 uppercase text-[9px] tracking-[0.25em] text-cyan-400/80">{card.genres?.[0] || 'Unknown'} — {card.year ?? "?"}</div>
                       <h3 className="truncate font-serif text-lg font-bold leading-tight text-white mb-1" title={card.title}>{card.title}</h3>
                       <p className="truncate text-sm text-zinc-400 font-medium" title={card.artist}>{card.artist}</p>
-                      
-                       <div className="mt-3 flex flex-wrap gap-1.5 opacity-80">
+                      <p className="mt-2 line-clamp-2 text-xs leading-5 text-zinc-500" title={(card.styles ?? []).join(", ")}>
+                        Estilos: {card.styles?.length ? card.styles.join(", ") : "Sin estilos"}
+                      </p>
+                       
+                        <div className="mt-3 flex flex-wrap gap-1.5 opacity-80">
                          {metricBadge("Have", String(card.have ?? "-"))}
                          {metricBadge("Venta", String(card.num_for_sale ?? 0))}
                          {metricBadge("De", `${card.lowest_price ?? "N/D"}€`)}
