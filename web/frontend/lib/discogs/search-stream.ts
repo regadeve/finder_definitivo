@@ -214,12 +214,12 @@ async function startDesktopSearchStream({ userId, filters, signal, onStatus, onI
 }
 
 export function getSearchRuntimeLabel() {
-  if (shouldPreferProxy()) {
-    return getProxyApiUrl();
-  }
-
   if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
     return "desktop-local-discogs";
+  }
+
+  if (shouldPreferProxy()) {
+    return getProxyApiUrl();
   }
 
   return "backend-proxy";
@@ -228,23 +228,9 @@ export function getSearchRuntimeLabel() {
 export async function startSearchStream(options: SearchStreamOptions) {
   const isDesktop = await isTauriRuntime();
 
-   if (!isDesktop) {
+  if (!isDesktop) {
     throw new Error(DESKTOP_ONLY_SEARCH_MESSAGE);
   }
 
-  if (shouldPreferProxy()) {
-    try {
-      return await startProxySearchStream(options);
-    } catch (error) {
-      if (!isDesktop) {
-        throw error;
-      }
-    }
-  }
-
-  if (isDesktop) {
-    return startDesktopSearchStream(options);
-  }
-
-  return startProxySearchStream(options);
+  return startDesktopSearchStream(options);
 }
