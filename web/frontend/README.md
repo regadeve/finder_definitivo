@@ -1,36 +1,47 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Frontend 103 FINDER
 
-## Getting Started
+Frontend principal de la aplicacion. Consume la API FastAPI por SSE, usa Supabase para la autenticacion del cliente y ahora incluye una base Tauri para empaquetarlo como app desktop.
 
-First, run the development server:
+## Desarrollo
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Desktop
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm install
+npm run desktop:dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Para Tauri necesitas Rust/Cargo instalado en la maquina.
 
-## Learn More
+## Variables necesarias
 
-To learn more about Next.js, take a look at the following resources:
+Crear `web/frontend/.env.local` con:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```env
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_BILLING_API_URL=https://api.103finder.shop
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+`NEXT_PUBLIC_BILLING_API_URL` se usa para Checkout, portal de Stripe y webhooks asociados al backend minimo de billing. `NEXT_PUBLIC_API_URL` puede seguir apuntando a la API de busqueda si mantienes ambos servicios separados.
 
-## Deploy on Vercel
+## Estado de la migracion desktop
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `src-tauri/`: shell nativa inicial para Windows/macOS/Linux.
+- `app/settings/page.tsx`: pantalla de configuracion del token local de Discogs.
+- `lib/desktop/discogs-token.ts`: puente entre React y los comandos nativos de Tauri.
+- `lib/discogs/search-stream.ts`: capa intermedia que usa Tauri en desktop y backend proxy en modo web.
+- `src-tauri/src/lib.rs`: implementa guardado seguro del token y la busqueda local de Discogs con eventos de progreso/cancelacion.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Flujo principal
+
+- `app/login/page.tsx`: login con Supabase.
+- `app/filters/page.tsx`: constructor de filtros.
+- `app/search/page.tsx`: parsea query params y arranca la busqueda.
+- `app/search/SearchClient.tsx`: consume SSE y pinta resultados en tiempo real.

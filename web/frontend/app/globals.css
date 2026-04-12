@@ -1,26 +1,114 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: var(--font-body-sans);
+  --font-mono: var(--font-code-mono);
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #050816;
+  --foreground: #f4f4f5;
+  --card: rgba(10, 15, 28, 0.4);
+  --card-border: rgba(255, 255, 255, 0.08);
+  --neon-cyan: #06b6d4;
+  --neon-magenta: #d946ef;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  box-sizing: border-box;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
+  background: var(--background);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body-sans), sans-serif;
+  min-height: 100vh;
+  /* subtle noise texture for the vinyl feel */
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.02'/%3E%3C/svg%3E");
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(203, 95, 50, 0.22);
+}
+
+@keyframes fade-up-soft {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(34, 211, 238, 0);
+  }
+
+  50% {
+    box-shadow: 0 0 24px rgba(34, 211, 238, 0.16);
+  }
+}
+
+.animate-fade-up-soft {
+  animation: fade-up-soft 0.55s ease-out both;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 2.4s ease-in-out infinite;
+}
+
+.filters-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(113, 113, 122, 0.9) rgba(10, 15, 28, 0.78);
+}
+
+.filters-scrollbar::-webkit-scrollbar {
+  width: 10px;
+}
+
+.filters-scrollbar::-webkit-scrollbar-track {
+  background: rgba(10, 15, 28, 0.78);
+  border-radius: 999px;
+}
+
+.filters-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(82, 82, 91, 0.95), rgba(39, 39, 42, 0.95));
+  border-radius: 999px;
+  border: 2px solid rgba(10, 15, 28, 0.82);
+}
+
+.filters-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, rgba(161, 161, 170, 0.95), rgba(63, 63, 70, 0.95));
+}
+
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 260ms;
+  animation-timing-function: ease;
 }
