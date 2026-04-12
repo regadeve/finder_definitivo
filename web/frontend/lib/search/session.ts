@@ -43,6 +43,7 @@ let state: SearchSessionState = {
     tope_resultados: 0,
     youtube_status: "Todos",
     not_on_label_only: false,
+    exclude_various: false,
   },
   running: false,
   status: "Ajusta los filtros arriba y busca.",

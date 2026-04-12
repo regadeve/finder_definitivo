@@ -111,6 +111,7 @@ function normalizeFilters(input: Partial<SearchFiltersPayload>): SearchFiltersPa
     tope_resultados: input.tope_resultados ?? 0,
     youtube_status: input.youtube_status ?? "Todos",
     not_on_label_only: input.not_on_label_only ?? false,
+    exclude_various: input.exclude_various ?? false,
   };
 }
 
@@ -145,6 +146,7 @@ export default function FinderClient() {
   const [maxCopiasVenta, setMaxCopiasVenta] = useState(initialFilters.max_copias_venta);
   const [topeResultados, setTopeResultados] = useState(initialFilters.tope_resultados);
   const [notOnLabelOnly, setNotOnLabelOnly] = useState(initialFilters.not_on_label_only);
+  const [excludeVarious, setExcludeVarious] = useState(initialFilters.exclude_various);
 
   const searchSession = useSyncExternalStore(subscribeSearchSession, getSearchSessionState, getSearchSessionState);
   const { running, status, processedCount, foundCount, pageInfo, items } = searchSession;
@@ -202,14 +204,14 @@ export default function FinderClient() {
       return;
     }
 
-    const filters = overrideFilters ?? normalizeFilters({ year_start: yearStart, year_end: yearEnd, have_min: haveMin, have_max: haveMax, want_min: wantMin, want_max: wantMax, max_versions: maxVersions, countries_selected: countriesSelected, formats_selected: formatsSelected, type_selected: typeSelected, genres, styles, strict_genre: strictGenre, strict_style: strictStyle, sin_anyo: sinAnyo, solo_en_venta: soloEnVenta, precio_minimo: precioMinimo, precio_maximo: precioMaximo, max_copias_venta: maxCopiasVenta, tope_resultados: topeResultados, youtube_status: youtubeStatus, not_on_label_only: notOnLabelOnly });
+    const filters = overrideFilters ?? normalizeFilters({ year_start: yearStart, year_end: yearEnd, have_min: haveMin, have_max: haveMax, want_min: wantMin, want_max: wantMax, max_versions: maxVersions, countries_selected: countriesSelected, formats_selected: formatsSelected, type_selected: typeSelected, genres, styles, strict_genre: strictGenre, strict_style: strictStyle, sin_anyo: sinAnyo, solo_en_venta: soloEnVenta, precio_minimo: precioMinimo, precio_maximo: precioMaximo, max_copias_venta: maxCopiasVenta, tope_resultados: topeResultados, youtube_status: youtubeStatus, not_on_label_only: notOnLabelOnly, exclude_various: excludeVarious });
     setSearchSessionFilters(filters);
     void startSearchSession(supabase, userId, filters);
-  }, [yearStart, yearEnd, haveMin, haveMax, wantMin, wantMax, maxVersions, countriesSelected, formatsSelected, typeSelected, genres, styles, strictGenre, strictStyle, sinAnyo, soloEnVenta, precioMinimo, precioMaximo, maxCopiasVenta, topeResultados, youtubeStatus, notOnLabelOnly, userId, supabase]);
+  }, [yearStart, yearEnd, haveMin, haveMax, wantMin, wantMax, maxVersions, countriesSelected, formatsSelected, typeSelected, genres, styles, strictGenre, strictStyle, sinAnyo, soloEnVenta, precioMinimo, precioMaximo, maxCopiasVenta, topeResultados, youtubeStatus, notOnLabelOnly, excludeVarious, userId, supabase]);
 
   useEffect(() => {
-    setSearchSessionFilters(normalizeFilters({ year_start: yearStart, year_end: yearEnd, have_min: haveMin, have_max: haveMax, want_min: wantMin, want_max: wantMax, max_versions: maxVersions, countries_selected: countriesSelected, formats_selected: formatsSelected, type_selected: typeSelected, genres, styles, strict_genre: strictGenre, strict_style: strictStyle, sin_anyo: sinAnyo, solo_en_venta: soloEnVenta, precio_minimo: precioMinimo, precio_maximo: precioMaximo, max_copias_venta: maxCopiasVenta, tope_resultados: topeResultados, youtube_status: youtubeStatus, not_on_label_only: notOnLabelOnly }));
-  }, [yearStart, yearEnd, haveMin, haveMax, wantMin, wantMax, maxVersions, countriesSelected, formatsSelected, typeSelected, genres, styles, strictGenre, strictStyle, sinAnyo, soloEnVenta, precioMinimo, precioMaximo, maxCopiasVenta, topeResultados, youtubeStatus, notOnLabelOnly]);
+    setSearchSessionFilters(normalizeFilters({ year_start: yearStart, year_end: yearEnd, have_min: haveMin, have_max: haveMax, want_min: wantMin, want_max: wantMax, max_versions: maxVersions, countries_selected: countriesSelected, formats_selected: formatsSelected, type_selected: typeSelected, genres, styles, strict_genre: strictGenre, strict_style: strictStyle, sin_anyo: sinAnyo, solo_en_venta: soloEnVenta, precio_minimo: precioMinimo, precio_maximo: precioMaximo, max_copias_venta: maxCopiasVenta, tope_resultados: topeResultados, youtube_status: youtubeStatus, not_on_label_only: notOnLabelOnly, exclude_various: excludeVarious }));
+  }, [yearStart, yearEnd, haveMin, haveMax, wantMin, wantMax, maxVersions, countriesSelected, formatsSelected, typeSelected, genres, styles, strictGenre, strictStyle, sinAnyo, soloEnVenta, precioMinimo, precioMaximo, maxCopiasVenta, topeResultados, youtubeStatus, notOnLabelOnly, excludeVarious]);
 
   useEffect(() => {
     const rawFilters = searchParams.get("savedFilters");
@@ -240,6 +242,7 @@ export default function FinderClient() {
       setMaxCopiasVenta(parsed.max_copias_venta);
       setTopeResultados(parsed.tope_resultados);
       setNotOnLabelOnly(parsed.not_on_label_only);
+      setExcludeVarious(parsed.exclude_various);
       router.replace("/search");
       void start(parsed);
     } catch {
@@ -287,6 +290,7 @@ export default function FinderClient() {
           <div className="space-y-2">
             <ToggleRow checked={sinAnyo} onChange={setSinAnyo} title="Solo Discos Sin Año" />
             <ToggleRow checked={notOnLabelOnly} onChange={setNotOnLabelOnly} title="Solo Not On Label" />
+            <ToggleRow checked={excludeVarious} onChange={setExcludeVarious} title="Excluir Various" />
             <ToggleRow checked={soloEnVenta} onChange={setSoloEnVenta} title="Solo Copias en Venta" />
           </div>
         </section>

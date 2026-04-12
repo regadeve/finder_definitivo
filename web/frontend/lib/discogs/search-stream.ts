@@ -43,6 +43,7 @@ export type SearchFiltersPayload = {
   tope_resultados: number;
   youtube_status: string;
   not_on_label_only: boolean;
+  exclude_various: boolean;
 };
 
 type StreamPayload = {

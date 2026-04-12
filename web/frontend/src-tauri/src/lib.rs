@@ -49,6 +49,7 @@ struct SearchFilters {
     tope_resultados: i64,
     youtube_status: String,
     not_on_label_only: bool,
+    exclude_various: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -502,6 +503,10 @@ fn passes_details(details: &Value, filters: &SearchFilters) -> bool {
         return false;
     }
 
+    if filters.exclude_various && is_various_release(details) {
+        return false;
+    }
+
     let have = extract_have(details);
     if have < filters.have_min {
         return false;
@@ -627,6 +632,25 @@ fn is_not_on_label_release(details: &Value) -> bool {
             })
         })
         .unwrap_or(false)
+}
+
+fn is_various_release(details: &Value) -> bool {
+    let artist_candidates = [
+        string_value(details.get("artists_sort")),
+        string_value(details.get("artist")),
+        details
+            .get("artists")
+            .and_then(|value| value.as_array())
+            .and_then(|artists| artists.first())
+            .and_then(|artist| artist.get("name"))
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string()),
+    ];
+
+    artist_candidates
+        .into_iter()
+        .flatten()
+        .any(|value| value.trim().eq_ignore_ascii_case("Various"))
 }
 
 fn build_card(item: &Value, details: &Value) -> SearchCard {
