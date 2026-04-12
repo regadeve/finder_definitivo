@@ -77,6 +77,8 @@ function shouldPreferProxy() {
   return Boolean(process.env.NEXT_PUBLIC_API_URL);
 }
 
+export const DESKTOP_ONLY_SEARCH_MESSAGE = "La busqueda de Discogs solo esta disponible en la app de escritorio con token local del usuario.";
+
 function parseSseChunk(chunk: string) {
   const lines = chunk.split("\n");
   const eventLine = lines.find((line) => line.startsWith("event: "));
@@ -224,6 +226,10 @@ export function getSearchRuntimeLabel() {
 
 export async function startSearchStream(options: SearchStreamOptions) {
   const isDesktop = await isTauriRuntime();
+
+   if (!isDesktop) {
+    throw new Error(DESKTOP_ONLY_SEARCH_MESSAGE);
+  }
 
   if (shouldPreferProxy()) {
     try {
