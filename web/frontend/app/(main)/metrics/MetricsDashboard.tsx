@@ -171,11 +171,29 @@ function HeroStat({ label, value, hint, accent = "cyan" }: { label: string; valu
   return (
     <article className={`relative overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br ${accentMap[accent]} p-5 ring-1`}>
       <div className="absolute inset-x-0 top-0 h-px bg-white/30" />
-      <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-300/90">{label}</p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-300/90">{label}</p>
+        <span className="rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-white/75">
+          {accent === "emerald" ? "Revenue" : accent === "amber" ? "Catalog" : accent === "rose" ? "Risk" : accent === "blue" ? "Search" : "Pulse"}
+        </span>
+      </div>
       <p className="mt-4 text-4xl font-semibold text-white md:text-5xl">{value}</p>
       <p className="mt-3 max-w-xs text-sm leading-6 text-zinc-300/80">{hint}</p>
     </article>
   );
+}
+
+function SectionChip({ tone, icon, label }: { tone: "cyan" | "emerald" | "amber" | "rose" | "blue" | "violet"; icon: string; label: string }) {
+  const tones = {
+    cyan: "border-cyan-300/20 bg-cyan-300/10 text-cyan-100",
+    emerald: "border-emerald-300/20 bg-emerald-300/10 text-emerald-100",
+    amber: "border-amber-300/20 bg-amber-300/10 text-amber-100",
+    rose: "border-rose-300/20 bg-rose-300/10 text-rose-100",
+    blue: "border-blue-300/20 bg-blue-300/10 text-blue-100",
+    violet: "border-violet-300/20 bg-violet-300/10 text-violet-100",
+  } as const;
+
+  return <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${tones[tone]}`}>{icon} {label}</span>;
 }
 
 function MiniFold({ title, caption, defaultOpen = true, children }: { title: string; caption: string; defaultOpen?: boolean; children: React.ReactNode }) {
@@ -382,7 +400,21 @@ export default function MetricsDashboard({
         <HeroStat label="Catálogo sin año" value={computed.yearlessCount} hint={`${computed.yearlessTotalHits} hits acumulados · ${computed.yearlessPct}% del catálogo guardado`} accent="amber" />
       </section>
 
+      <section className="flex flex-wrap gap-2">
+        <SectionChip tone="cyan" icon="◉" label="Crecimiento" />
+        <SectionChip tone="emerald" icon="€" label="Suscripción" />
+        <SectionChip tone="blue" icon="⌕" label="Búsqueda" />
+        <SectionChip tone="amber" icon="◎" label="Catálogo" />
+        <SectionChip tone="rose" icon="!" label="Riesgo" />
+        <SectionChip tone="violet" icon="⚙" label="Operación" />
+      </section>
+
       <Fold kicker="Executive" title="Resumen ejecutivo" hint="Fotografía rápida del estado del negocio, la actividad y la calidad del catálogo." value={`${computed.totalUsers} usuarios`} defaultOpen>
+        <div className="mb-5 flex flex-wrap gap-2">
+          <SectionChip tone="cyan" icon="↗" label="Pulso general" />
+          <SectionChip tone="emerald" icon="¤" label="Acceso" />
+          <SectionChip tone="amber" icon="△" label="Señales" />
+        </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <HeroStat label="Altas hoy" value={computed.newToday} hint={`${computed.new7d} en 7 días`} accent="cyan" />
           <HeroStat label="Activos hoy" value={computed.activeToday} hint={`${computed.active30d} usuarios con actividad en 30 días`} accent="blue" />
@@ -561,6 +593,10 @@ export default function MetricsDashboard({
       </Fold>
 
       <Fold kicker="Ops" title="Operación y soporte" hint="Alertas de salud del producto, fricción del usuario y cosas que conviene vigilar." value="monitorización">
+        <div className="mb-5 flex flex-wrap gap-2">
+          <SectionChip tone="rose" icon="!" label="Incidencias" />
+          <SectionChip tone="blue" icon="~" label="Monitor" />
+        </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <HeroStat label="Search failed" value={computed.failedSearches} hint="Errores reportados por búsquedas guardadas" accent="rose" />
           <HeroStat label="Search aborted" value={computed.abortedSearches} hint="Búsquedas detenidas antes de completarse" accent="amber" />
