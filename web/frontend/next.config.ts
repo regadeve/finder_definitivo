@@ -23,7 +23,7 @@ const securityHeaders = [
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com",
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: blob: https://*.discogs.com https://*.stripe.com",
+      "img-src 'self' data: blob: https://*.discogs.com https://*.stripe.com https://*.supabase.co",
       "font-src 'self' data:",
       "connect-src 'self' https://*.supabase.co https://api.103finder.shop https://*.stripe.com",
       "frame-src https://js.stripe.com https://checkout.stripe.com https://billing.stripe.com",
@@ -45,6 +45,10 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "**.discogs.com",
+      },
+      {
+        protocol: "https",
+        hostname: "**.supabase.co",
       },
     ],
     formats: ["image/avif", "image/webp"],
