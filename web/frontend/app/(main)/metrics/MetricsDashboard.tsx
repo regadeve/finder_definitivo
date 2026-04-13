@@ -203,6 +203,23 @@ function KpiStrip({ label, value, delta, tone = "cyan" }: { label: string; value
   );
 }
 
+function AlertTile({ tone, title, value, detail }: { tone: "rose" | "amber" | "blue" | "emerald"; title: string; value: string | number; detail: string }) {
+  const tones = {
+    rose: "border-rose-300/18 bg-rose-300/10 text-rose-100",
+    amber: "border-amber-300/18 bg-amber-300/10 text-amber-100",
+    blue: "border-blue-300/18 bg-blue-300/10 text-blue-100",
+    emerald: "border-emerald-300/18 bg-emerald-300/10 text-emerald-100",
+  } as const;
+
+  return (
+    <article className={`rounded-[24px] border p-4 ${tones[tone]}`}>
+      <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-200/75">{title}</p>
+      <p className="mt-2 text-3xl font-semibold text-white">{value}</p>
+      <p className="mt-2 text-sm leading-6 text-zinc-200/80">{detail}</p>
+    </article>
+  );
+}
+
 function SectionChip({ tone, icon, label }: { tone: "cyan" | "emerald" | "amber" | "rose" | "blue" | "violet"; icon: string; label: string }) {
   const tones = {
     cyan: "border-cyan-300/20 bg-cyan-300/10 text-cyan-100",
@@ -336,6 +353,7 @@ export default function MetricsDashboard({
     const completedSearches = searches.filter((row) => row.status === "completed").length;
     const avgResults = searches.length ? (searches.reduce((sum, row) => sum + (row.result_count || 0), 0) / searches.length).toFixed(1) : "0.0";
     const uniqueSearchUsers7d = new Set(searches7d.map((row) => row.user_id)).size;
+    const uniqueSearchUsers30d = new Set(searches30d.map((row) => row.user_id)).size;
     const searchStatusData = countBy(searches, (row) => row.status);
     const topGenres = countMany(searches.map((row) => row.filters.genres ?? [])).slice(0, 8);
     const topStyles = countMany(searches.map((row) => row.filters.styles ?? [])).slice(0, 8);
@@ -388,6 +406,7 @@ export default function MetricsDashboard({
       completedSearches,
       avgResults,
       uniqueSearchUsers7d,
+      uniqueSearchUsers30d,
       searchStatusData,
       topGenres,
       topStyles,
@@ -408,6 +427,8 @@ export default function MetricsDashboard({
       registeredToAccessPct: totalUsers ? Math.round(((paidSubscriptions.length + bypassUsers) / totalUsers) * 100) : 0,
       searchSuccessPct: totalSearches ? Math.round((completedSearches / totalSearches) * 100) : 0,
       yearlessPct: releases.length ? Math.round((yearlessHits.length / releases.length) * 100) : 0,
+      activeTrend: active30d - active7d,
+      searchTrend: searches30d.length - searches7d.length,
     };
   }, [profiles, subscriptions, searches, releases, yearlessHits]);
 
@@ -429,10 +450,17 @@ export default function MetricsDashboard({
         <SectionChip tone="violet" icon="⚙" label="Operación" />
       </section>
 
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <AlertTile tone="rose" title="Incidencia billing" value={computed.customerWithoutSubscription} detail="Customers con checkout o alta incompleta que conviene revisar." />
+        <AlertTile tone="amber" title="Búsquedas cortadas" value={computed.abortedSearches} detail="Abortadas antes de acabar; posible fricción de UX o navegación." />
+        <AlertTile tone="blue" title="Usuarios buscando" value={computed.uniqueSearchUsers30d} detail="Usuarios únicos que han usado Finder durante 30 días." />
+        <AlertTile tone="emerald" title="Conversión a acceso" value={`${computed.registeredToAccessPct}%`} detail="Porcentaje de registrados con pago activo o bypass manual." />
+      </section>
+
       <Fold kicker="Executive" title="Resumen ejecutivo" hint="Fotografía rápida del estado del negocio, la actividad y la calidad del catálogo." value={`${computed.totalUsers} usuarios`} defaultOpen>
         <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <KpiStrip label="Altas" value={computed.new30d} delta={`${computed.new7d} en 7d`} tone="cyan" />
-          <KpiStrip label="Activos" value={computed.active30d} delta={`${computed.activeToday} hoy`} tone="blue" />
+          <KpiStrip label="Activos" value={computed.active30d} delta={`${computed.activeToday} hoy · Δ ${computed.activeTrend >= 0 ? "+" : ""}${computed.activeTrend}`} tone="blue" />
           <KpiStrip label="Pago" value={`${computed.registeredToPaidPct}%`} delta={`${computed.paidSubscriptions} activas`} tone="emerald" />
           <KpiStrip label="Riesgo" value={computed.customerWithoutSubscription} delta={`${computed.unpaidSubscriptions} no activas`} tone="rose" />
         </div>
@@ -537,7 +565,7 @@ export default function MetricsDashboard({
           <MiniFold title="Rendimiento general" caption="Volumen y salud operativa del buscador." defaultOpen>
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <HeroStat label="Búsquedas hoy" value={computed.searchesToday} hint={`${computed.searches7d} en 7 días`} accent="blue" />
-              <HeroStat label="Usuarios buscando" value={computed.uniqueSearchUsers7d} hint="Usuarios únicos activos en búsqueda durante 7 días" accent="cyan" />
+              <HeroStat label="Usuarios buscando" value={computed.uniqueSearchUsers7d} hint={`${computed.uniqueSearchUsers30d} usuarios únicos en 30 días`} accent="cyan" />
               <HeroStat label="Media resultados" value={computed.avgResults} hint="Resultados encontrados por búsqueda guardada" accent="emerald" />
               <HeroStat label="Abortadas / fallidas" value={`${computed.abortedSearches} / ${computed.failedSearches}`} hint="Señal de fricción o problemas" accent="rose" />
             </div>
@@ -546,7 +574,7 @@ export default function MetricsDashboard({
           <MiniFold title="Embudo de búsqueda" caption="De volumen a éxito final, con foco en cuellos de botella.">
             <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
               <div className="grid gap-4 md:grid-cols-2">
-                <KpiStrip label="Total" value={computed.totalSearches} delta={`${computed.searchesToday} hoy`} tone="blue" />
+                <KpiStrip label="Total" value={computed.totalSearches} delta={`${computed.searchesToday} hoy · Δ ${computed.searchTrend >= 0 ? "+" : ""}${computed.searchTrend}`} tone="blue" />
                 <KpiStrip label="Completadas" value={computed.completedSearches} delta={`${computed.searchSuccessPct}% éxito`} tone="emerald" />
                 <KpiStrip label="Abortadas" value={computed.abortedSearches} delta="fricción" tone="amber" />
                 <KpiStrip label="Fallidas" value={computed.failedSearches} delta="errores" tone="rose" />
