@@ -183,6 +183,26 @@ function HeroStat({ label, value, hint, accent = "cyan" }: { label: string; valu
   );
 }
 
+function KpiStrip({ label, value, delta, tone = "cyan" }: { label: string; value: string | number; delta: string; tone?: "cyan" | "emerald" | "amber" | "rose" | "blue" }) {
+  const tones = {
+    cyan: "border-cyan-300/18 bg-cyan-300/8 text-cyan-100",
+    emerald: "border-emerald-300/18 bg-emerald-300/8 text-emerald-100",
+    amber: "border-amber-300/18 bg-amber-300/8 text-amber-100",
+    rose: "border-rose-300/18 bg-rose-300/8 text-rose-100",
+    blue: "border-blue-300/18 bg-blue-300/8 text-blue-100",
+  } as const;
+
+  return (
+    <div className={`rounded-2xl border px-4 py-3 ${tones[tone]}`}>
+      <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-300/80">{label}</p>
+      <div className="mt-2 flex items-end justify-between gap-3">
+        <p className="text-2xl font-semibold text-white">{value}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-300/70">{delta}</p>
+      </div>
+    </div>
+  );
+}
+
 function SectionChip({ tone, icon, label }: { tone: "cyan" | "emerald" | "amber" | "rose" | "blue" | "violet"; icon: string; label: string }) {
   const tones = {
     cyan: "border-cyan-300/20 bg-cyan-300/10 text-cyan-100",
@@ -410,10 +430,11 @@ export default function MetricsDashboard({
       </section>
 
       <Fold kicker="Executive" title="Resumen ejecutivo" hint="Fotografía rápida del estado del negocio, la actividad y la calidad del catálogo." value={`${computed.totalUsers} usuarios`} defaultOpen>
-        <div className="mb-5 flex flex-wrap gap-2">
-          <SectionChip tone="cyan" icon="↗" label="Pulso general" />
-          <SectionChip tone="emerald" icon="¤" label="Acceso" />
-          <SectionChip tone="amber" icon="△" label="Señales" />
+        <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <KpiStrip label="Altas" value={computed.new30d} delta={`${computed.new7d} en 7d`} tone="cyan" />
+          <KpiStrip label="Activos" value={computed.active30d} delta={`${computed.activeToday} hoy`} tone="blue" />
+          <KpiStrip label="Pago" value={`${computed.registeredToPaidPct}%`} delta={`${computed.paidSubscriptions} activas`} tone="emerald" />
+          <KpiStrip label="Riesgo" value={computed.customerWithoutSubscription} delta={`${computed.unpaidSubscriptions} no activas`} tone="rose" />
         </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <HeroStat label="Altas hoy" value={computed.newToday} hint={`${computed.new7d} en 7 días`} accent="cyan" />
@@ -472,19 +493,40 @@ export default function MetricsDashboard({
                 <HeroStat label="Customers sin sub" value={computed.customerWithoutSubscription} hint="Posibles incidencias de checkout" accent="amber" />
               </div>
               <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
-                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">Distribución por estado</p>
-                <div className="mt-4 h-[320px] w-full">
-                  <ResponsiveContainer>
-                    <PieChart>
-                      <Pie data={computed.subscriptionsByStatus} dataKey="value" nameKey="name" outerRadius={110} innerRadius={62} paddingAngle={3}>
-                        {computed.subscriptionsByStatus.map((entry, index) => <Cell key={entry.name} fill={PIE[index % PIE.length]} />)}
-                      </Pie>
-                      <Tooltip contentStyle={{ borderRadius: 18, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(9,15,28,0.94)", color: "#f4f4f5" }} />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
+                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">Embudo operativo</p>
+                <div className="mt-4 space-y-4">
+                  {[
+                    { label: "Registrados", value: computed.totalUsers, color: "bg-cyan-400" },
+                    { label: "Con acceso", value: computed.paidSubscriptions + computed.bypassUsers, color: "bg-blue-400" },
+                    { label: "Activas", value: computed.paidSubscriptions, color: "bg-emerald-400" },
+                    { label: "Bypass manual", value: computed.bypassUsers, color: "bg-amber-400" },
+                  ].map((step) => (
+                    <div key={step.label}>
+                      <div className="mb-2 flex items-center justify-between text-sm">
+                        <span className="text-zinc-200">{step.label}</span>
+                        <span className="text-zinc-500">{step.value}</span>
+                      </div>
+                      <div className="h-3 overflow-hidden rounded-full bg-white/5">
+                        <div className={`${step.color} h-full rounded-full`} style={{ width: `${computed.totalUsers ? (step.value / computed.totalUsers) * 100 : 0}%` }} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
+            </div>
+          </MiniFold>
+
+          <MiniFold title="Estados de suscripción" caption="Distribución visual por estado para detectar dónde se atasca el billing.">
+            <div className="h-[320px] w-full rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
+              <ResponsiveContainer>
+                <PieChart>
+                  <Pie data={computed.subscriptionsByStatus} dataKey="value" nameKey="name" outerRadius={110} innerRadius={62} paddingAngle={3}>
+                    {computed.subscriptionsByStatus.map((entry, index) => <Cell key={entry.name} fill={PIE[index % PIE.length]} />)}
+                  </Pie>
+                  <Tooltip contentStyle={{ borderRadius: 18, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(9,15,28,0.94)", color: "#f4f4f5" }} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
           </MiniFold>
         </div>
@@ -498,6 +540,37 @@ export default function MetricsDashboard({
               <HeroStat label="Usuarios buscando" value={computed.uniqueSearchUsers7d} hint="Usuarios únicos activos en búsqueda durante 7 días" accent="cyan" />
               <HeroStat label="Media resultados" value={computed.avgResults} hint="Resultados encontrados por búsqueda guardada" accent="emerald" />
               <HeroStat label="Abortadas / fallidas" value={`${computed.abortedSearches} / ${computed.failedSearches}`} hint="Señal de fricción o problemas" accent="rose" />
+            </div>
+          </MiniFold>
+
+          <MiniFold title="Embudo de búsqueda" caption="De volumen a éxito final, con foco en cuellos de botella.">
+            <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+              <div className="grid gap-4 md:grid-cols-2">
+                <KpiStrip label="Total" value={computed.totalSearches} delta={`${computed.searchesToday} hoy`} tone="blue" />
+                <KpiStrip label="Completadas" value={computed.completedSearches} delta={`${computed.searchSuccessPct}% éxito`} tone="emerald" />
+                <KpiStrip label="Abortadas" value={computed.abortedSearches} delta="fricción" tone="amber" />
+                <KpiStrip label="Fallidas" value={computed.failedSearches} delta="errores" tone="rose" />
+              </div>
+              <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
+                <div className="space-y-4">
+                  {[
+                    { label: "Lanzadas", value: computed.totalSearches, color: "bg-blue-400" },
+                    { label: "Completadas", value: computed.completedSearches, color: "bg-emerald-400" },
+                    { label: "Abortadas", value: computed.abortedSearches, color: "bg-amber-400" },
+                    { label: "Fallidas", value: computed.failedSearches, color: "bg-rose-400" },
+                  ].map((step) => (
+                    <div key={step.label}>
+                      <div className="mb-2 flex items-center justify-between text-sm">
+                        <span className="text-zinc-200">{step.label}</span>
+                        <span className="text-zinc-500">{step.value}</span>
+                      </div>
+                      <div className="h-3 overflow-hidden rounded-full bg-white/5">
+                        <div className={`${step.color} h-full rounded-full`} style={{ width: `${computed.totalSearches ? (step.value / computed.totalSearches) * 100 : 0}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </MiniFold>
 
