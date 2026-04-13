@@ -358,6 +358,7 @@ const RANGE_OPTIONS = [
 ] as const;
 
 type RangeKey = (typeof RANGE_OPTIONS)[number]["key"];
+type BillingMode = "all" | "test" | "live";
 
 export default function MetricsDashboard({
   profiles,
@@ -377,6 +378,7 @@ export default function MetricsDashboard({
   billingEvents: BillingEventRow[];
 }) {
   const [range, setRange] = useState<RangeKey>("30d");
+  const [billingMode, setBillingMode] = useState<BillingMode>("all");
   const [userQuery, setUserQuery] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
@@ -444,8 +446,10 @@ export default function MetricsDashboard({
       { key: "subscriptions", rows: scopedSubscriptions.map((row) => row.created_at) },
     ]);
 
-    const scopedBillingInvoices = rangeStart ? billingInvoices.filter((row) => isAfterDate(row.created_at, rangeStart) || isAfterDate(row.paid_at, rangeStart)) : billingInvoices;
-    const scopedBillingEvents = rangeStart ? billingEvents.filter((row) => isAfterDate(row.created_at, rangeStart)) : billingEvents;
+    const rangeBillingInvoices = rangeStart ? billingInvoices.filter((row) => isAfterDate(row.created_at, rangeStart) || isAfterDate(row.paid_at, rangeStart)) : billingInvoices;
+    const rangeBillingEvents = rangeStart ? billingEvents.filter((row) => isAfterDate(row.created_at, rangeStart)) : billingEvents;
+    const scopedBillingInvoices = rangeBillingInvoices.filter((row) => billingMode === "all" || row.livemode === (billingMode === "live"));
+    const scopedBillingEvents = rangeBillingEvents.filter((row) => billingMode === "all" || row.livemode === (billingMode === "live"));
 
     const paidInvoices = scopedBillingInvoices.filter((row) => row.status === "paid");
     const failedInvoices = scopedBillingInvoices.filter((row) => row.status === "open" || row.status === "uncollectible" || row.status === "void");
@@ -535,7 +539,7 @@ export default function MetricsDashboard({
       activeTrend: active30d - active7d,
       searchTrend: searches30d.length - searches7d.length,
     };
-  }, [profiles, subscriptions, searches, releases, yearlessHits, billingInvoices, billingEvents, range]);
+  }, [profiles, subscriptions, searches, releases, yearlessHits, billingInvoices, billingEvents, range, billingMode]);
 
   const filteredUsers = useMemo(() => {
     const q = userQuery.trim().toLowerCase();
@@ -580,6 +584,28 @@ export default function MetricsDashboard({
                 type="button"
                 onClick={() => setRange(option.key)}
                 className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${range === option.key ? "border border-cyan-300/30 bg-cyan-300/20 text-cyan-100" : "border border-white/10 bg-white/[0.03] text-zinc-400 hover:bg-white/[0.08]"}`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-4">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.26em] text-zinc-500">Modo billing</p>
+            <p className="mt-2 text-sm text-zinc-300">Separa facturación de prueba y facturación live.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {[
+              { key: "all", label: "Todos" },
+              { key: "test", label: "Solo test" },
+              { key: "live", label: "Solo live" },
+            ].map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => setBillingMode(option.key as BillingMode)}
+                className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${billingMode === option.key ? "border border-emerald-300/30 bg-emerald-300/20 text-emerald-100" : "border border-white/10 bg-white/[0.03] text-zinc-400 hover:bg-white/[0.08]"}`}
               >
                 {option.label}
               </button>
