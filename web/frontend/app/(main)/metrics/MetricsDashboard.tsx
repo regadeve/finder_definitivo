@@ -82,12 +82,6 @@ function fmtDay(value: string) {
   return new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "short" }).format(date);
 }
 
-function fmtMonth(value: string) {
-  const date = new Date(`${value}-01T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("es-ES", { month: "short", year: "2-digit" }).format(date);
-}
-
 function toDayKey(value: string | null | undefined) {
   if (!value) return "";
   const date = new Date(value);
@@ -166,25 +160,6 @@ function buildDailySeries(lastDays: number, sources: Array<{ key: string; rows: 
     const point: Record<string, string | number> = { day };
     for (const source of sources) {
       point[source.key] = source.rows.filter((value) => toDayKey(value) === day).length;
-    }
-    return point;
-  });
-}
-
-function buildMonthlySeries(sources: Array<{ key: string; rows: string[] }>) {
-  const months = new Set<string>();
-  for (const source of sources) {
-    for (const row of source.rows) {
-      const key = toDayKey(row);
-      if (key) months.add(key.slice(0, 7));
-    }
-  }
-
-  const orderedMonths = Array.from(months).sort();
-  return orderedMonths.map((month) => {
-    const point: Record<string, string | number> = { day: month };
-    for (const source of sources) {
-      point[source.key] = source.rows.filter((value) => toDayKey(value).startsWith(month)).length;
     }
     return point;
   });
@@ -337,26 +312,6 @@ function HorizontalRank({ rows, emptyLabel = "Sin datos" }: { rows: Array<{ name
   );
 }
 
-function HeatStrip({ data, keys }: { data: Array<Record<string, string | number>>; keys: Array<{ key: string; label: string }> }) {
-  const max = Math.max(1, ...data.flatMap((row) => keys.map((item) => Number(row[item.key] ?? 0))));
-  return (
-    <div className="space-y-4">
-      {keys.map((item) => (
-        <div key={item.key}>
-          <p className="mb-2 text-xs uppercase tracking-[0.22em] text-zinc-500">{item.label}</p>
-          <div className="grid grid-cols-10 gap-2 md:grid-cols-15 xl:grid-cols-30">
-            {data.map((row) => {
-              const value = Number(row[item.key] ?? 0);
-              const opacity = value === 0 ? 0.08 : 0.2 + (value / max) * 0.8;
-              return <div key={`${item.key}-${String(row.day)}`} title={`${fmtDay(String(row.day))}: ${value}`} className="h-5 rounded-md border border-white/5" style={{ background: `rgba(34,211,238,${opacity})` }} />;
-            })}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 const PIE = ["#22d3ee", "#60a5fa", "#34d399", "#f59e0b", "#f472b6", "#f87171", "#a78bfa"];
 
 const RANGE_OPTIONS = [
@@ -444,20 +399,12 @@ export default function MetricsDashboard({
     const yearlessTotalHits = scopedYearless.reduce((sum, row) => sum + row.times_found, 0);
     const topYearless = [...scopedYearless].sort((a, b) => b.times_found - a.times_found).slice(0, 10);
 
-    const seriesSources = [
+    const dailySeries = buildDailySeries(30, [
       { key: "registeredUsers", rows: scopedProfiles.map((row) => row.created_at) },
       { key: "activeUsers", rows: scopedProfiles.map((row) => row.last_seen_at || "") },
       { key: "searches", rows: scopedSearches.map((row) => row.created_at) },
       { key: "subscriptions", rows: scopedSubscriptions.map((row) => row.created_at) },
-    ];
-
-    const dailySeries = selectedRange.days === null
-      ? buildMonthlySeries(seriesSources)
-      : selectedRange.days <= 30
-        ? buildDailySeries(selectedRange.days, seriesSources)
-        : selectedRange.days <= 180
-          ? buildDailySeries(selectedRange.days, seriesSources)
-          : buildMonthlySeries(seriesSources);
+    ]);
 
     const usersDirectory = profiles
       .map((profile) => {
@@ -484,7 +431,6 @@ export default function MetricsDashboard({
 
     return {
       selectedRange,
-      usesMonthlySeries: selectedRange.days === null || selectedRange.days > 180,
       totalUsers,
       activeToday,
       active7d,
@@ -620,9 +566,9 @@ export default function MetricsDashboard({
                     <linearGradient id="g-subs" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#34d399" stopOpacity={0.26} /><stop offset="95%" stopColor="#34d399" stopOpacity={0} /></linearGradient>
                   </defs>
                   <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
-                    <XAxis dataKey="day" tickFormatter={computed.usesMonthlySeries ? fmtMonth : fmtDay} stroke="rgba(161,161,170,0.9)" tickLine={false} axisLine={false} minTickGap={18} />
+                    <XAxis dataKey="day" tickFormatter={fmtDay} stroke="rgba(161,161,170,0.9)" tickLine={false} axisLine={false} minTickGap={18} />
                     <YAxis stroke="rgba(161,161,170,0.9)" tickLine={false} axisLine={false} allowDecimals={false} />
-                    <Tooltip labelFormatter={(value) => computed.usesMonthlySeries ? fmtMonth(String(value)) : fmtDay(String(value))} contentStyle={{ borderRadius: 18, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(9,15,28,0.94)", color: "#f4f4f5" }} />
+                    <Tooltip labelFormatter={(value) => fmtDay(String(value))} contentStyle={{ borderRadius: 18, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(9,15,28,0.94)", color: "#f4f4f5" }} />
                   <Legend />
                   <Area type="monotone" dataKey="registeredUsers" stroke="#22d3ee" fill="url(#g-users)" strokeWidth={2.8} name="Registros" />
                   <Area type="monotone" dataKey="searches" stroke="#60a5fa" fill="url(#g-searches)" strokeWidth={2.6} name="Búsquedas" />
@@ -632,17 +578,6 @@ export default function MetricsDashboard({
             </div>
           </MiniFold>
 
-          <MiniFold title="Mapa de calor ligero" caption="Intensidad visual de actividad por día en el último mes.">
-            <HeatStrip
-              data={computed.dailySeries}
-              keys={[
-                { key: "registeredUsers", label: "Altas" },
-                { key: "activeUsers", label: "Activos" },
-                { key: "searches", label: "Búsquedas" },
-                { key: "subscriptions", label: "Subscripciones" },
-              ]}
-            />
-          </MiniFold>
         </div>
       </Fold>
 
