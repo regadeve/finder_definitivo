@@ -551,7 +551,7 @@ export default function MetricsDashboard({
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6">
         <HeroStat label="Usuarios" value={computed.totalUsers} hint={`${computed.new30d} altas en 30 días · ${computed.active7d} activos en 7 días`} accent="cyan" />
         <HeroStat label="Suscripciones activas" value={computed.paidSubscriptions} hint={`${computed.registeredToPaidPct}% de conversión a pago`} accent="emerald" />
         <HeroStat label="Búsquedas 30 días" value={computed.searches30d} hint={`${computed.searchSuccessPct}% completadas · media ${computed.avgResults} resultados`} accent="blue" />
@@ -588,7 +588,7 @@ export default function MetricsDashboard({
         </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-4">
         <AlertTile tone="rose" title="Incidencia billing" value={computed.customerWithoutSubscription} detail="Customers con checkout o alta incompleta que conviene revisar." />
         <AlertTile tone="amber" title="Búsquedas cortadas" value={computed.abortedSearches} detail="Abortadas antes de acabar; posible fricción de UX o navegación." />
         <AlertTile tone="blue" title="Usuarios buscando" value={computed.uniqueSearchUsers30d} detail="Usuarios únicos que han usado Finder durante 30 días." />
@@ -596,13 +596,13 @@ export default function MetricsDashboard({
       </section>
 
       <Fold kicker="Executive" title="Resumen ejecutivo" hint="Fotografía rápida del estado del negocio, la actividad y la calidad del catálogo." value={`${computed.totalUsers} usuarios`} defaultOpen>
-        <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6">
           <KpiStrip label="Altas" value={computed.new30d} delta={`${computed.new7d} en 7d`} tone="cyan" />
           <KpiStrip label="Activos" value={computed.active30d} delta={`${computed.activeToday} hoy · Δ ${computed.activeTrend >= 0 ? "+" : ""}${computed.activeTrend}`} tone="blue" />
           <KpiStrip label="Pago" value={`${computed.registeredToPaidPct}%`} delta={`${computed.paidSubscriptions} activas`} tone="emerald" />
           <KpiStrip label="Riesgo" value={computed.customerWithoutSubscription} delta={`${computed.unpaidSubscriptions} no activas`} tone="rose" />
         </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-4">
           <HeroStat label="Altas hoy" value={computed.newToday} hint={`${computed.new7d} en 7 días`} accent="cyan" />
           <HeroStat label="Activos hoy" value={computed.activeToday} hint={`${computed.active30d} usuarios con actividad en 30 días`} accent="blue" />
           <HeroStat label="Acceso manual" value={computed.bypassUsers} hint={`${computed.adminUsers} cuentas admin + bypass`} accent="rose" />
@@ -640,7 +640,7 @@ export default function MetricsDashboard({
       <Fold kicker="Billing" title="Negocio y suscripción" hint="Embudo de acceso, estados de pago y alertas claras de billing." value={`${computed.paidSubscriptions} activas`}>
         <div className="space-y-4">
           <MiniFold title="Embudo y conversión" caption="Del registro al acceso efectivo.">
-            <div className="grid gap-4 xl:grid-cols-[0.92fr_1.08fr]">
+            <div className="grid gap-4 2xl:grid-cols-[0.8fr_1.2fr]">
               <div className="grid gap-4 md:grid-cols-2">
                 <HeroStat label="Conversión a pago" value={`${computed.registeredToPaidPct}%`} hint={`${computed.paidSubscriptions}/${computed.totalUsers} usuarios`} accent="emerald" />
                 <HeroStat label="Conversión a acceso" value={`${computed.registeredToAccessPct}%`} hint="Incluye bypass manual" accent="cyan" />
@@ -686,7 +686,7 @@ export default function MetricsDashboard({
           </MiniFold>
 
           <MiniFold title="Facturación real" caption="Datos reales de invoices sincronizadas desde Stripe vía webhook." defaultOpen>
-            <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+            <div className="grid gap-4 2xl:grid-cols-[0.88fr_1.12fr]">
               <div className="grid gap-4 md:grid-cols-2">
                 <HeroStat label="Revenue cobrado" value={`${(computed.totalRevenue / 100).toFixed(2)} EUR`} hint="Suma real de amount_paid en el rango" accent="emerald" />
                 <HeroStat label="Revenue recurrente" value={`${(computed.recurringRevenue / 100).toFixed(2)} EUR`} hint="Pagos asociados a subscriptions activas/trialing" accent="cyan" />
@@ -720,7 +720,7 @@ export default function MetricsDashboard({
       <Fold kicker="Usage" title="Uso del buscador" hint="Rendimiento, hábitos, toggles y filtros dominantes del Finder." value={`${computed.totalSearches} búsquedas`}>
         <div className="space-y-4">
           <MiniFold title="Rendimiento general" caption="Volumen y salud operativa del buscador." defaultOpen>
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6">
               <HeroStat label="Búsquedas hoy" value={computed.searchesToday} hint={`${computed.searches7d} en 7 días`} accent="blue" />
               <HeroStat label="Usuarios buscando" value={computed.uniqueSearchUsers7d} hint={`${computed.uniqueSearchUsers30d} usuarios únicos en 30 días`} accent="cyan" />
               <HeroStat label="Media resultados" value={computed.avgResults} hint="Resultados encontrados por búsqueda guardada" accent="emerald" />
@@ -729,8 +729,8 @@ export default function MetricsDashboard({
           </MiniFold>
 
           <MiniFold title="Embudo de búsqueda" caption="De volumen a éxito final, con foco en cuellos de botella.">
-            <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
-              <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 2xl:grid-cols-[0.85fr_1.15fr]">
+              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
                 <KpiStrip label="Total" value={computed.totalSearches} delta={`${computed.searchesToday} hoy · Δ ${computed.searchTrend >= 0 ? "+" : ""}${computed.searchTrend}`} tone="blue" />
                 <KpiStrip label="Completadas" value={computed.completedSearches} delta={`${computed.searchSuccessPct}% éxito`} tone="emerald" />
                 <KpiStrip label="Abortadas" value={computed.abortedSearches} delta="fricción" tone="amber" />
@@ -760,7 +760,7 @@ export default function MetricsDashboard({
           </MiniFold>
 
           <MiniFold title="Estados, toggles y tops" caption="Visualizaciones bonitas de qué hace realmente la gente.">
-            <div className="grid gap-4 xl:grid-cols-2">
+            <div className="grid gap-4 2xl:grid-cols-[0.9fr_1.1fr]">
               <div className="space-y-4">
                 <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
                   <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">Estado de búsquedas</p>
@@ -807,7 +807,7 @@ export default function MetricsDashboard({
       <Fold kicker="Catalog" title="Calidad de catálogo" hint="Sin año, favoritos, escuchados y textura real de la colección creada por usuarios." value={`${computed.yearlessCount} sin año`}>
         <div className="space-y-4">
           <MiniFold title="Releases sin año" caption="Hallazgos raros detectados por cualquier usuario." defaultOpen>
-            <div className="grid gap-4 xl:grid-cols-[0.78fr_1.22fr]">
+            <div className="grid gap-4 2xl:grid-cols-[0.7fr_1.3fr]">
               <div className="grid gap-4 md:grid-cols-2">
                 <HeroStat label="Releases únicos" value={computed.yearlessCount} hint="Referencias diferentes detectadas sin año" accent="amber" />
                 <HeroStat label="Hits acumulados" value={computed.yearlessTotalHits} hint="Veces que el sistema los encontró" accent="amber" />
@@ -830,7 +830,7 @@ export default function MetricsDashboard({
           </MiniFold>
 
           <MiniFold title="Favoritos, escuchados y taxonomía" caption="Qué está gustando más y qué estilos terminan guardados.">
-            <div className="grid gap-4 xl:grid-cols-2">
+            <div className="grid gap-4 2xl:grid-cols-[0.92fr_1.08fr]">
               <div className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
                   <HeroStat label="Favoritos" value={computed.releaseFavorites} hint="Marcados por usuarios" accent="blue" />
@@ -851,7 +851,7 @@ export default function MetricsDashboard({
       </Fold>
 
       <Fold kicker="Users" title="Usuarios" hint="Directorio operativo de usuarios con búsqueda y ficha resumida para soporte o seguimiento." value={`${computed.usersDirectory.length} usuarios`}>
-        <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="grid gap-4 2xl:grid-cols-[0.82fr_1.18fr]">
           <MiniFold title="Buscador de usuarios" caption="Busca por nombre, email o id y selecciona una cuenta para ver su ficha." defaultOpen>
             <div className="space-y-4">
               <input
