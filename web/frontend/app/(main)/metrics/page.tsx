@@ -61,6 +61,40 @@ type ReleaseMetricRow = {
   updated_at: string;
 };
 
+type BillingInvoiceRow = {
+  stripe_invoice_id: string;
+  user_id: string | null;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  stripe_price_id: string | null;
+  status: string;
+  livemode: boolean;
+  currency: string | null;
+  amount_due: number;
+  amount_paid: number;
+  amount_remaining: number;
+  subtotal: number;
+  tax: number;
+  total: number;
+  period_start: string | null;
+  period_end: string | null;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type BillingEventRow = {
+  stripe_event_id: string;
+  event_type: string;
+  livemode: boolean;
+  user_id: string | null;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  stripe_invoice_id: string | null;
+  created_at: string;
+  received_at: string;
+};
+
 function panel(extra = "") {
   return `rounded-[28px] border border-white/10 bg-white/[0.04] shadow-[0_24px_60px_rgba(0,0,0,0.35)] backdrop-blur-xl ${extra}`;
 }
@@ -75,6 +109,8 @@ export default function MetricsPage() {
   const [searches, setSearches] = useState<SearchMetricRow[]>([]);
   const [releases, setReleases] = useState<ReleaseMetricRow[]>([]);
   const [yearlessHits, setYearlessHits] = useState<YearlessReleaseHit[]>([]);
+  const [billingInvoices, setBillingInvoices] = useState<BillingInvoiceRow[]>([]);
+  const [billingEvents, setBillingEvents] = useState<BillingEventRow[]>([]);
 
   useEffect(() => {
     let active = true;
@@ -99,12 +135,14 @@ export default function MetricsPage() {
           return;
         }
 
-        const [profilesResult, subscriptionsResult, searchesResult, releasesResult, yearlessResult] = await Promise.all([
+        const [profilesResult, subscriptionsResult, searchesResult, releasesResult, yearlessResult, billingInvoicesResult, billingEventsResult] = await Promise.all([
           supabase.from("profiles").select("id, email, full_name, created_at, last_seen_at, is_admin, bypass_subscription").order("created_at", { ascending: false }).limit(5000),
           supabase.from("user_subscriptions").select("user_id, status, stripe_customer_id, stripe_subscription_id, current_period_end, cancel_at_period_end, created_at, updated_at").order("updated_at", { ascending: false }).limit(5000),
           supabase.from("user_searches").select("id, user_id, status, result_count, created_at, filters").order("created_at", { ascending: false }).limit(5000),
           supabase.from("user_releases").select("user_id, release_uri, title, artist, is_favorite, listened, listened_at, genres, styles, formats, updated_at").order("updated_at", { ascending: false }).limit(5000),
           fetchYearlessReleaseHits(supabase, 250),
+          supabase.from("billing_invoices").select("stripe_invoice_id, user_id, stripe_customer_id, stripe_subscription_id, stripe_price_id, status, livemode, currency, amount_due, amount_paid, amount_remaining, subtotal, tax, total, period_start, period_end, paid_at, created_at, updated_at").order("created_at", { ascending: false }).limit(5000),
+          supabase.from("billing_events").select("stripe_event_id, event_type, livemode, user_id, stripe_customer_id, stripe_subscription_id, stripe_invoice_id, created_at, received_at").order("created_at", { ascending: false }).limit(5000),
         ]);
 
         if (!active) return;
@@ -113,12 +151,16 @@ export default function MetricsPage() {
         if (subscriptionsResult.error) throw new Error(`No se pudo cargar user_subscriptions: ${subscriptionsResult.error.message}`);
         if (searchesResult.error) throw new Error(`No se pudo cargar user_searches: ${searchesResult.error.message}`);
         if (releasesResult.error) throw new Error(`No se pudo cargar user_releases: ${releasesResult.error.message}`);
+        if (billingInvoicesResult.error) throw new Error(`No se pudo cargar billing_invoices: ${billingInvoicesResult.error.message}`);
+        if (billingEventsResult.error) throw new Error(`No se pudo cargar billing_events: ${billingEventsResult.error.message}`);
 
         setProfiles((profilesResult.data ?? []) as ProfileMetricRow[]);
         setSubscriptions((subscriptionsResult.data ?? []) as SubscriptionMetricRow[]);
         setSearches((searchesResult.data ?? []) as SearchMetricRow[]);
         setReleases((releasesResult.data ?? []) as ReleaseMetricRow[]);
         setYearlessHits(yearlessResult);
+        setBillingInvoices((billingInvoicesResult.data ?? []) as BillingInvoiceRow[]);
+        setBillingEvents((billingEventsResult.data ?? []) as BillingEventRow[]);
       } catch (nextError) {
         if (!active) return;
         setError(nextError instanceof Error ? nextError.message : "No se pudieron cargar las metricas.");
@@ -176,6 +218,8 @@ export default function MetricsPage() {
             searches={searches}
             releases={releases}
             yearlessHits={yearlessHits}
+            billingInvoices={billingInvoices}
+            billingEvents={billingEvents}
           />
         )}
       </div>

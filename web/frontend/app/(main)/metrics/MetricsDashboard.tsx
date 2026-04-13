@@ -72,6 +72,40 @@ type ReleaseMetricRow = {
   updated_at: string;
 };
 
+type BillingInvoiceRow = {
+  stripe_invoice_id: string;
+  user_id: string | null;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  stripe_price_id: string | null;
+  status: string;
+  livemode: boolean;
+  currency: string | null;
+  amount_due: number;
+  amount_paid: number;
+  amount_remaining: number;
+  subtotal: number;
+  tax: number;
+  total: number;
+  period_start: string | null;
+  period_end: string | null;
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type BillingEventRow = {
+  stripe_event_id: string;
+  event_type: string;
+  livemode: boolean;
+  user_id: string | null;
+  stripe_customer_id: string | null;
+  stripe_subscription_id: string | null;
+  stripe_invoice_id: string | null;
+  created_at: string;
+  received_at: string;
+};
+
 function panel(extra = "") {
   return `rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.025))] shadow-[0_24px_60px_rgba(0,0,0,0.35)] backdrop-blur-xl ${extra}`;
 }
@@ -331,12 +365,16 @@ export default function MetricsDashboard({
   searches,
   releases,
   yearlessHits,
+  billingInvoices,
+  billingEvents,
 }: {
   profiles: ProfileMetricRow[];
   subscriptions: SubscriptionMetricRow[];
   searches: SearchMetricRow[];
   releases: ReleaseMetricRow[];
   yearlessHits: YearlessReleaseHit[];
+  billingInvoices: BillingInvoiceRow[];
+  billingEvents: BillingEventRow[];
 }) {
   const [range, setRange] = useState<RangeKey>("30d");
   const [userQuery, setUserQuery] = useState("");
@@ -406,6 +444,18 @@ export default function MetricsDashboard({
       { key: "subscriptions", rows: scopedSubscriptions.map((row) => row.created_at) },
     ]);
 
+    const scopedBillingInvoices = rangeStart ? billingInvoices.filter((row) => isAfterDate(row.created_at, rangeStart) || isAfterDate(row.paid_at, rangeStart)) : billingInvoices;
+    const scopedBillingEvents = rangeStart ? billingEvents.filter((row) => isAfterDate(row.created_at, rangeStart)) : billingEvents;
+
+    const paidInvoices = scopedBillingInvoices.filter((row) => row.status === "paid");
+    const failedInvoices = scopedBillingInvoices.filter((row) => row.status === "open" || row.status === "uncollectible" || row.status === "void");
+    const totalRevenue = paidInvoices.reduce((sum, row) => sum + (row.amount_paid || 0), 0);
+    const recurringRevenue = paidInvoices
+      .filter((row) => paidStatuses.has(subscriptions.find((item) => item.stripe_subscription_id === row.stripe_subscription_id)?.status || ""))
+      .reduce((sum, row) => sum + (row.amount_paid || 0), 0);
+    const invoicesByStatus = countBy(scopedBillingInvoices, (row) => row.status).slice(0, 7);
+    const recentBillingEvents = countBy(scopedBillingEvents, (row) => row.event_type).slice(0, 6);
+
     const usersDirectory = profiles
       .map((profile) => {
         const userSubscription = subscriptions.find((row) => row.user_id === profile.id) ?? null;
@@ -472,6 +522,12 @@ export default function MetricsDashboard({
       topYearless,
       dailySeries,
       usersDirectory,
+      totalRevenue,
+      recurringRevenue,
+      paidInvoices: paidInvoices.length,
+      failedInvoices: failedInvoices.length,
+      invoicesByStatus,
+      recentBillingEvents,
       registeredToPaidPct: totalUsers ? Math.round((paidSubscriptions.length / totalUsers) * 100) : 0,
       registeredToAccessPct: totalUsers ? Math.round(((paidSubscriptions.length + bypassUsers) / totalUsers) * 100) : 0,
       searchSuccessPct: totalSearches ? Math.round((completedSearches / totalSearches) * 100) : 0,
@@ -479,7 +535,7 @@ export default function MetricsDashboard({
       activeTrend: active30d - active7d,
       searchTrend: searches30d.length - searches7d.length,
     };
-  }, [profiles, subscriptions, searches, releases, yearlessHits, range]);
+  }, [profiles, subscriptions, searches, releases, yearlessHits, billingInvoices, billingEvents, range]);
 
   const filteredUsers = useMemo(() => {
     const q = userQuery.trim().toLowerCase();
@@ -626,6 +682,36 @@ export default function MetricsDashboard({
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
+            </div>
+          </MiniFold>
+
+          <MiniFold title="Facturación real" caption="Datos reales de invoices sincronizadas desde Stripe vía webhook." defaultOpen>
+            <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+              <div className="grid gap-4 md:grid-cols-2">
+                <HeroStat label="Revenue cobrado" value={`${(computed.totalRevenue / 100).toFixed(2)} EUR`} hint="Suma real de amount_paid en el rango" accent="emerald" />
+                <HeroStat label="Revenue recurrente" value={`${(computed.recurringRevenue / 100).toFixed(2)} EUR`} hint="Pagos asociados a subscriptions activas/trialing" accent="cyan" />
+                <HeroStat label="Invoices pagadas" value={computed.paidInvoices} hint="Cobros con estado paid" accent="blue" />
+                <HeroStat label="Invoices con riesgo" value={computed.failedInvoices} hint="Open, uncollectible o void en el rango" accent="rose" />
+              </div>
+              <div className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
+                <p className="mb-4 text-xs uppercase tracking-[0.22em] text-zinc-500">Estados de invoice</p>
+                <div className="h-[300px] w-full">
+                  <ResponsiveContainer>
+                    <BarChart data={computed.invoicesByStatus}>
+                      <CartesianGrid stroke="rgba(255,255,255,0.08)" vertical={false} />
+                      <XAxis dataKey="name" stroke="rgba(161,161,170,0.9)" tickLine={false} axisLine={false} />
+                      <YAxis stroke="rgba(161,161,170,0.9)" tickLine={false} axisLine={false} allowDecimals={false} />
+                      <Tooltip contentStyle={{ borderRadius: 18, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(9,15,28,0.94)", color: "#f4f4f5" }} />
+                      <Bar dataKey="value" fill="#34d399" radius={[12, 12, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-[28px] border border-white/10 bg-white/[0.03] p-5">
+              <p className="mb-4 text-xs uppercase tracking-[0.22em] text-zinc-500">Eventos de billing recientes</p>
+              <HorizontalRank rows={computed.recentBillingEvents} emptyLabel="Aún no hay eventos de billing sincronizados." />
             </div>
           </MiniFold>
         </div>
