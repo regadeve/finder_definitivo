@@ -185,7 +185,7 @@ export default function MetricsPage() {
         <div className="absolute right-0 top-24 h-[360px] w-[360px] rounded-full bg-fuchsia-500/10 blur-3xl" />
       </div>
 
-      <div className="relative mx-auto max-w-7xl px-5 py-8 md:px-8 lg:px-10 lg:py-10">
+      <div className="relative mx-auto w-full max-w-[1700px] px-4 py-8 md:px-6 lg:px-8 lg:py-10 xl:px-10 2xl:px-12">
         <section className="animate-fade-up-soft mb-8 overflow-hidden rounded-[34px] border border-white/10 bg-[linear-gradient(135deg,rgba(10,15,28,0.92),rgba(8,12,23,0.76))] p-7 shadow-[0_30px_100px_rgba(0,0,0,0.45)] md:p-10">
           <div className="grid gap-8 lg:grid-cols-[1.15fr_0.85fr] lg:items-end">
             <div>
