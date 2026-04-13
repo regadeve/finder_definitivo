@@ -224,7 +224,7 @@ function HeroStat({ label, value, hint, accent = "cyan" }: { label: string; valu
   } as const;
 
   return (
-    <article className={`relative overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br ${accentMap[accent]} p-5 ring-1`}>
+    <article className={`relative overflow-hidden rounded-[24px] border border-white/10 bg-gradient-to-br ${accentMap[accent]} p-4 ring-1`}>
       <div className="absolute inset-x-0 top-0 h-px bg-white/30" />
       <div className="flex items-center justify-between gap-3">
         <p className="text-[11px] uppercase tracking-[0.28em] text-zinc-300/90">{label}</p>
@@ -232,8 +232,8 @@ function HeroStat({ label, value, hint, accent = "cyan" }: { label: string; valu
           {accent === "emerald" ? "Revenue" : accent === "amber" ? "Catalog" : accent === "rose" ? "Risk" : accent === "blue" ? "Search" : "Pulse"}
         </span>
       </div>
-      <p className="mt-4 text-4xl font-semibold text-white md:text-5xl">{value}</p>
-      <p className="mt-3 max-w-xs text-sm leading-6 text-zinc-300/80">{hint}</p>
+      <p className="mt-3 text-3xl font-semibold text-white md:text-4xl">{value}</p>
+      <p className="mt-2 max-w-xs text-xs leading-5 text-zinc-300/80 md:text-sm">{hint}</p>
     </article>
   );
 }
@@ -248,10 +248,10 @@ function KpiStrip({ label, value, delta, tone = "cyan" }: { label: string; value
   } as const;
 
   return (
-    <div className={`rounded-2xl border px-4 py-3 ${tones[tone]}`}>
+    <div className={`rounded-2xl border px-3.5 py-3 ${tones[tone]}`}>
       <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-300/80">{label}</p>
       <div className="mt-2 flex items-end justify-between gap-3">
-        <p className="text-2xl font-semibold text-white">{value}</p>
+        <p className="text-xl font-semibold text-white md:text-2xl">{value}</p>
         <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-300/70">{delta}</p>
       </div>
     </div>
@@ -267,10 +267,10 @@ function AlertTile({ tone, title, value, detail }: { tone: "rose" | "amber" | "b
   } as const;
 
   return (
-    <article className={`rounded-[24px] border p-4 ${tones[tone]}`}>
+    <article className={`rounded-[20px] border p-3.5 ${tones[tone]}`}>
       <p className="text-[10px] uppercase tracking-[0.18em] text-zinc-200/75">{title}</p>
-      <p className="mt-2 text-3xl font-semibold text-white">{value}</p>
-      <p className="mt-2 text-sm leading-6 text-zinc-200/80">{detail}</p>
+      <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
+      <p className="mt-2 text-xs leading-5 text-zinc-200/80 md:text-sm">{detail}</p>
     </article>
   );
 }
@@ -291,14 +291,14 @@ function SectionChip({ tone, icon, label }: { tone: "cyan" | "emerald" | "amber"
 function MiniFold({ title, caption, defaultOpen = true, children }: { title: string; caption: string; defaultOpen?: boolean; children: React.ReactNode }) {
   return (
     <details className={panel("group p-0")} open={defaultOpen}>
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3.5 md:px-5 md:py-4">
         <div>
           <p className="text-sm font-semibold text-white">{title}</p>
           <p className="mt-1 text-xs leading-5 text-zinc-400">{caption}</p>
         </div>
         <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-zinc-300 transition group-open:rotate-180">▼</span>
       </summary>
-      <div className="border-t border-white/10 p-5">{children}</div>
+      <div className="border-t border-white/10 p-4 md:p-5">{children}</div>
     </details>
   );
 }
@@ -306,20 +306,20 @@ function MiniFold({ title, caption, defaultOpen = true, children }: { title: str
 function Fold({ kicker, title, hint, value, defaultOpen = false, children }: { kicker: string; title: string; hint: string; value?: string; defaultOpen?: boolean; children: React.ReactNode }) {
   return (
     <details className={panel("group p-0")} open={defaultOpen}>
-      <summary className="flex cursor-pointer list-none items-center gap-4 px-5 py-5 md:px-6">
+      <summary className="flex cursor-pointer list-none items-center gap-4 px-4 py-4 md:px-5 md:py-4.5">
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold uppercase tracking-[0.3em] text-cyan-300/85">{kicker}</p>
           <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-semibold text-white md:text-3xl">{title}</h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-zinc-400">{hint}</p>
+              <h2 className="text-xl font-semibold text-white md:text-2xl">{title}</h2>
+              <p className="mt-1.5 max-w-3xl text-xs leading-5 text-zinc-400 md:text-sm">{hint}</p>
             </div>
             {value ? <p className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-300">{value}</p> : null}
           </div>
         </div>
         <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs uppercase tracking-[0.2em] text-zinc-300 transition group-open:rotate-180">▼</span>
       </summary>
-      <div className="border-t border-white/10 px-5 py-5 md:px-6">{children}</div>
+      <div className="border-t border-white/10 px-4 py-4 md:px-5 md:py-5">{children}</div>
     </details>
   );
 }
