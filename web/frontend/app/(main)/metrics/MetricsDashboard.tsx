@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   Area,
   AreaChart,
@@ -101,6 +101,27 @@ function withinDays(value: string | null | undefined, days: number) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return false;
   return date >= daysAgo(days);
+}
+
+function isAfterDate(value: string | null | undefined, since: Date | null) {
+  if (!since) return Boolean(value);
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return date >= since;
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "Sin dato";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("es-ES", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 function countBy<T>(rows: T[], keyBuilder: (row: T) => string | null | undefined) {
@@ -313,6 +334,17 @@ function HeatStrip({ data, keys }: { data: Array<Record<string, string | number>
 
 const PIE = ["#22d3ee", "#60a5fa", "#34d399", "#f59e0b", "#f472b6", "#f87171", "#a78bfa"];
 
+const RANGE_OPTIONS = [
+  { key: "7d", label: "7 días", days: 7 },
+  { key: "30d", label: "30 días", days: 30 },
+  { key: "90d", label: "3 meses", days: 90 },
+  { key: "180d", label: "6 meses", days: 180 },
+  { key: "365d", label: "1 año", days: 365 },
+  { key: "all", label: "Desde el principio", days: null },
+] as const;
+
+type RangeKey = (typeof RANGE_OPTIONS)[number]["key"];
+
 export default function MetricsDashboard({
   profiles,
   subscriptions,
@@ -326,63 +358,99 @@ export default function MetricsDashboard({
   releases: ReleaseMetricRow[];
   yearlessHits: YearlessReleaseHit[];
 }) {
+  const [range, setRange] = useState<RangeKey>("30d");
+  const [userQuery, setUserQuery] = useState("");
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+
   const computed = useMemo(() => {
-    const totalUsers = profiles.length;
-    const activeToday = profiles.filter((row) => withinDays(row.last_seen_at, 1)).length;
-    const active7d = profiles.filter((row) => withinDays(row.last_seen_at, 7)).length;
-    const active30d = profiles.filter((row) => withinDays(row.last_seen_at, 30)).length;
-    const newToday = profiles.filter((row) => withinDays(row.created_at, 1)).length;
-    const new7d = profiles.filter((row) => withinDays(row.created_at, 7)).length;
-    const new30d = profiles.filter((row) => withinDays(row.created_at, 30)).length;
+    const selectedRange = RANGE_OPTIONS.find((option) => option.key === range) ?? RANGE_OPTIONS[1];
+    const rangeStart = selectedRange.days === null ? null : daysAgo(selectedRange.days);
+    const scopedProfiles = rangeStart ? profiles.filter((row) => isAfterDate(row.created_at, rangeStart) || isAfterDate(row.last_seen_at, rangeStart)) : profiles;
+    const scopedSubscriptions = rangeStart ? subscriptions.filter((row) => isAfterDate(row.created_at, rangeStart) || isAfterDate(row.updated_at, rangeStart)) : subscriptions;
+    const scopedSearches = rangeStart ? searches.filter((row) => isAfterDate(row.created_at, rangeStart)) : searches;
+    const scopedReleases = rangeStart ? releases.filter((row) => isAfterDate(row.updated_at, rangeStart) || isAfterDate(row.listened_at, rangeStart)) : releases;
+    const scopedYearless = rangeStart ? yearlessHits.filter((row) => isAfterDate(row.last_found_at, rangeStart) || isAfterDate(row.first_found_at, rangeStart)) : yearlessHits;
+
+    const totalUsers = scopedProfiles.length;
+    const activeToday = scopedProfiles.filter((row) => withinDays(row.last_seen_at, 1)).length;
+    const active7d = scopedProfiles.filter((row) => withinDays(row.last_seen_at, 7)).length;
+    const active30d = scopedProfiles.filter((row) => withinDays(row.last_seen_at, 30)).length;
+    const newToday = scopedProfiles.filter((row) => withinDays(row.created_at, 1)).length;
+    const new7d = scopedProfiles.filter((row) => withinDays(row.created_at, 7)).length;
+    const new30d = scopedProfiles.filter((row) => withinDays(row.created_at, 30)).length;
     const bypassUsers = profiles.filter((row) => row.bypass_subscription).length;
     const adminUsers = profiles.filter((row) => row.is_admin).length;
 
     const paidStatuses = new Set(["active", "trialing"]);
-    const paidSubscriptions = subscriptions.filter((row) => paidStatuses.has(row.status));
-    const unpaidSubscriptions = subscriptions.filter((row) => !paidStatuses.has(row.status));
-    const subscriptionsByStatus = countBy(subscriptions, (row) => row.status).slice(0, 7);
-    const customerWithoutSubscription = subscriptions.filter((row) => row.stripe_customer_id && !row.stripe_subscription_id).length;
-    const cancelAtPeriodEnd = subscriptions.filter((row) => row.cancel_at_period_end).length;
+    const paidSubscriptions = scopedSubscriptions.filter((row) => paidStatuses.has(row.status));
+    const unpaidSubscriptions = scopedSubscriptions.filter((row) => !paidStatuses.has(row.status));
+    const subscriptionsByStatus = countBy(scopedSubscriptions, (row) => row.status).slice(0, 7);
+    const customerWithoutSubscription = scopedSubscriptions.filter((row) => row.stripe_customer_id && !row.stripe_subscription_id).length;
+    const cancelAtPeriodEnd = scopedSubscriptions.filter((row) => row.cancel_at_period_end).length;
 
-    const totalSearches = searches.length;
-    const searchesToday = searches.filter((row) => withinDays(row.created_at, 1));
-    const searches7d = searches.filter((row) => withinDays(row.created_at, 7));
-    const searches30d = searches.filter((row) => withinDays(row.created_at, 30));
-    const failedSearches = searches.filter((row) => row.status === "failed").length;
-    const abortedSearches = searches.filter((row) => row.status === "aborted").length;
-    const completedSearches = searches.filter((row) => row.status === "completed").length;
-    const avgResults = searches.length ? (searches.reduce((sum, row) => sum + (row.result_count || 0), 0) / searches.length).toFixed(1) : "0.0";
+    const totalSearches = scopedSearches.length;
+    const searchesToday = scopedSearches.filter((row) => withinDays(row.created_at, 1));
+    const searches7d = scopedSearches.filter((row) => withinDays(row.created_at, 7));
+    const searches30d = scopedSearches.filter((row) => withinDays(row.created_at, 30));
+    const failedSearches = scopedSearches.filter((row) => row.status === "failed").length;
+    const abortedSearches = scopedSearches.filter((row) => row.status === "aborted").length;
+    const completedSearches = scopedSearches.filter((row) => row.status === "completed").length;
+    const avgResults = scopedSearches.length ? (scopedSearches.reduce((sum, row) => sum + (row.result_count || 0), 0) / scopedSearches.length).toFixed(1) : "0.0";
     const uniqueSearchUsers7d = new Set(searches7d.map((row) => row.user_id)).size;
     const uniqueSearchUsers30d = new Set(searches30d.map((row) => row.user_id)).size;
-    const searchStatusData = countBy(searches, (row) => row.status);
-    const topGenres = countMany(searches.map((row) => row.filters.genres ?? [])).slice(0, 8);
-    const topStyles = countMany(searches.map((row) => row.filters.styles ?? [])).slice(0, 8);
-    const topCountries = countMany(searches.map((row) => row.filters.countries_selected ?? [])).slice(0, 8);
-    const topFormats = countMany(searches.map((row) => row.filters.formats_selected ?? [])).slice(0, 8);
+    const searchStatusData = countBy(scopedSearches, (row) => row.status);
+    const topGenres = countMany(scopedSearches.map((row) => row.filters.genres ?? [])).slice(0, 8);
+    const topStyles = countMany(scopedSearches.map((row) => row.filters.styles ?? [])).slice(0, 8);
+    const topCountries = countMany(scopedSearches.map((row) => row.filters.countries_selected ?? [])).slice(0, 8);
+    const topFormats = countMany(scopedSearches.map((row) => row.filters.formats_selected ?? [])).slice(0, 8);
     const toggleUsage = [
-      { name: "Sin año", value: searches.filter((row) => row.filters.sin_anyo).length },
-      { name: "Solo en venta", value: searches.filter((row) => row.filters.solo_en_venta).length },
-      { name: "Not On Label", value: searches.filter((row) => row.filters.not_on_label_only).length },
-      { name: "Excluir Various", value: searches.filter((row) => row.filters.exclude_various).length },
+      { name: "Sin año", value: scopedSearches.filter((row) => row.filters.sin_anyo).length },
+      { name: "Solo en venta", value: scopedSearches.filter((row) => row.filters.solo_en_venta).length },
+      { name: "Not On Label", value: scopedSearches.filter((row) => row.filters.not_on_label_only).length },
+      { name: "Excluir Various", value: scopedSearches.filter((row) => row.filters.exclude_various).length },
     ];
 
-    const releaseFavorites = releases.filter((row) => row.is_favorite).length;
-    const releaseListened = releases.filter((row) => row.listened).length;
-    const topFavoriteReleases = topReleaseRows(releases, (row) => row.is_favorite);
-    const topListenedReleases = topReleaseRows(releases, (row) => row.listened);
-    const savedGenres = countMany(releases.map((row) => row.genres ?? [])).slice(0, 8);
-    const savedStyles = countMany(releases.map((row) => row.styles ?? [])).slice(0, 8);
-    const yearlessTotalHits = yearlessHits.reduce((sum, row) => sum + row.times_found, 0);
-    const topYearless = [...yearlessHits].sort((a, b) => b.times_found - a.times_found).slice(0, 10);
+    const releaseFavorites = scopedReleases.filter((row) => row.is_favorite).length;
+    const releaseListened = scopedReleases.filter((row) => row.listened).length;
+    const topFavoriteReleases = topReleaseRows(scopedReleases, (row) => row.is_favorite);
+    const topListenedReleases = topReleaseRows(scopedReleases, (row) => row.listened);
+    const savedGenres = countMany(scopedReleases.map((row) => row.genres ?? [])).slice(0, 8);
+    const savedStyles = countMany(scopedReleases.map((row) => row.styles ?? [])).slice(0, 8);
+    const yearlessTotalHits = scopedYearless.reduce((sum, row) => sum + row.times_found, 0);
+    const topYearless = [...scopedYearless].sort((a, b) => b.times_found - a.times_found).slice(0, 10);
 
     const dailySeries = buildDailySeries(30, [
-      { key: "registeredUsers", rows: profiles.map((row) => row.created_at) },
-      { key: "activeUsers", rows: profiles.map((row) => row.last_seen_at || "") },
-      { key: "searches", rows: searches.map((row) => row.created_at) },
-      { key: "subscriptions", rows: subscriptions.map((row) => row.created_at) },
+      { key: "registeredUsers", rows: scopedProfiles.map((row) => row.created_at) },
+      { key: "activeUsers", rows: scopedProfiles.map((row) => row.last_seen_at || "") },
+      { key: "searches", rows: scopedSearches.map((row) => row.created_at) },
+      { key: "subscriptions", rows: scopedSubscriptions.map((row) => row.created_at) },
     ]);
 
+    const usersDirectory = profiles
+      .map((profile) => {
+        const userSubscription = subscriptions.find((row) => row.user_id === profile.id) ?? null;
+        const userSearches = searches.filter((row) => row.user_id === profile.id);
+        const userReleases = releases.filter((row) => row.user_id === profile.id);
+        const favoriteCount = userReleases.filter((row) => row.is_favorite).length;
+        const listenedCount = userReleases.filter((row) => row.listened).length;
+
+        return {
+          ...profile,
+          subscription: userSubscription,
+          searchCount: userSearches.length,
+          lastSearchAt: userSearches[0]?.created_at ?? null,
+          favoriteCount,
+          listenedCount,
+        };
+      })
+      .sort((a, b) => {
+        const aDate = new Date(a.last_seen_at || a.created_at).getTime();
+        const bDate = new Date(b.last_seen_at || b.created_at).getTime();
+        return bDate - aDate;
+      });
+
     return {
+      selectedRange,
       totalUsers,
       activeToday,
       active7d,
@@ -419,10 +487,11 @@ export default function MetricsDashboard({
       topListenedReleases,
       savedGenres,
       savedStyles,
-      yearlessCount: yearlessHits.length,
+      yearlessCount: scopedYearless.length,
       yearlessTotalHits,
       topYearless,
       dailySeries,
+      usersDirectory,
       registeredToPaidPct: totalUsers ? Math.round((paidSubscriptions.length / totalUsers) * 100) : 0,
       registeredToAccessPct: totalUsers ? Math.round(((paidSubscriptions.length + bypassUsers) / totalUsers) * 100) : 0,
       searchSuccessPct: totalSearches ? Math.round((completedSearches / totalSearches) * 100) : 0,
@@ -430,7 +499,19 @@ export default function MetricsDashboard({
       activeTrend: active30d - active7d,
       searchTrend: searches30d.length - searches7d.length,
     };
-  }, [profiles, subscriptions, searches, releases, yearlessHits]);
+  }, [profiles, subscriptions, searches, releases, yearlessHits, range]);
+
+  const filteredUsers = useMemo(() => {
+    const q = userQuery.trim().toLowerCase();
+    if (!q) return computed.usersDirectory;
+    return computed.usersDirectory.filter((user) => {
+      return [user.full_name || "", user.email || "", user.id].some((value) => value.toLowerCase().includes(q));
+    });
+  }, [computed.usersDirectory, userQuery]);
+
+  const selectedUser = useMemo(() => {
+    return filteredUsers.find((user) => user.id === selectedUserId) ?? computed.usersDirectory.find((user) => user.id === selectedUserId) ?? filteredUsers[0] ?? computed.usersDirectory[0] ?? null;
+  }, [filteredUsers, computed.usersDirectory, selectedUserId]);
 
   return (
     <div className="space-y-6">
@@ -448,6 +529,27 @@ export default function MetricsDashboard({
         <SectionChip tone="amber" icon="◎" label="Catálogo" />
         <SectionChip tone="rose" icon="!" label="Riesgo" />
         <SectionChip tone="violet" icon="⚙" label="Operación" />
+      </section>
+
+      <section className={panel("p-4 md:p-5")}>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.26em] text-zinc-500">Rango temporal</p>
+            <p className="mt-2 text-sm text-zinc-300">Filtra métricas y gráficos por ventana temporal.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {RANGE_OPTIONS.map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => setRange(option.key)}
+                className={`rounded-full px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${range === option.key ? "border border-cyan-300/30 bg-cyan-300/20 text-cyan-100" : "border border-white/10 bg-white/[0.03] text-zinc-400 hover:bg-white/[0.08]"}`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -689,6 +791,71 @@ export default function MetricsDashboard({
                 </div>
               </div>
             </div>
+          </MiniFold>
+        </div>
+      </Fold>
+
+      <Fold kicker="Users" title="Usuarios" hint="Directorio operativo de usuarios con búsqueda y ficha resumida para soporte o seguimiento." value={`${computed.usersDirectory.length} usuarios`}>
+        <div className="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+          <MiniFold title="Buscador de usuarios" caption="Busca por nombre, email o id y selecciona una cuenta para ver su ficha." defaultOpen>
+            <div className="space-y-4">
+              <input
+                value={userQuery}
+                onChange={(event) => setUserQuery(event.target.value)}
+                placeholder="Buscar usuario por nombre, email o id..."
+                className="w-full rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/40"
+              />
+              <div className="max-h-[520px] space-y-2 overflow-auto pr-1">
+                {filteredUsers.map((user) => (
+                  <button
+                    key={user.id}
+                    type="button"
+                    onClick={() => setSelectedUserId(user.id)}
+                    className={`w-full rounded-[24px] border p-4 text-left transition ${selectedUser?.id === user.id ? "border-cyan-300/30 bg-cyan-300/12" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.06]"}`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-white">{user.full_name || user.email || user.id}</p>
+                        <p className="truncate text-xs text-zinc-400">{user.email || user.id}</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {user.is_admin ? <SectionChip tone="rose" icon="A" label="Admin" /> : null}
+                        {user.bypass_subscription ? <SectionChip tone="amber" icon="B" label="Bypass" /> : null}
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.16em] text-zinc-500">
+                      <span>Searches {user.searchCount}</span>
+                      <span>Favoritos {user.favoriteCount}</span>
+                      <span>Escuchados {user.listenedCount}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </MiniFold>
+
+          <MiniFold title="Ficha de usuario" caption="Información relevante para entender su actividad, acceso y suscripción." defaultOpen>
+            {selectedUser ? (
+              <div className="space-y-4">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <HeroStat label="Usuario" value={selectedUser.full_name || "Sin nombre"} hint={selectedUser.email || selectedUser.id} accent="cyan" />
+                  <HeroStat label="Suscripción" value={selectedUser.subscription?.status || "inactive"} hint={selectedUser.subscription?.stripe_subscription_id || "Sin subscription id"} accent={selectedUser.subscription?.status === "active" ? "emerald" : "amber"} />
+                </div>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                  <KpiStrip label="Registrado" value={formatDateTime(selectedUser.created_at)} delta="alta" tone="cyan" />
+                  <KpiStrip label="Último seen" value={formatDateTime(selectedUser.last_seen_at)} delta="presencia" tone="blue" />
+                  <KpiStrip label="Búsquedas" value={selectedUser.searchCount} delta={selectedUser.lastSearchAt ? `última ${formatDateTime(selectedUser.lastSearchAt)}` : "sin búsquedas"} tone="emerald" />
+                  <KpiStrip label="Suscrito desde" value={formatDateTime(selectedUser.subscription?.created_at)} delta={selectedUser.subscription?.cancel_at_period_end ? "cancelación programada" : "vigente"} tone="amber" />
+                </div>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <AlertTile tone="blue" title="Favoritos" value={selectedUser.favoriteCount} detail="Releases guardados como favoritos por este usuario." />
+                  <AlertTile tone="emerald" title="Escuchados" value={selectedUser.listenedCount} detail="Releases marcados como escuchados." />
+                  <AlertTile tone={selectedUser.bypass_subscription ? "amber" : "rose"} title="Acceso" value={selectedUser.bypass_subscription ? "Bypass" : selectedUser.subscription?.status || "inactive"} detail={selectedUser.is_admin ? "Cuenta admin con visibilidad total." : "Estado principal de acceso a la app."} />
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-[24px] border border-white/10 bg-white/[0.03] p-6 text-sm text-zinc-400">No hay usuarios que coincidan con el filtro.</div>
+            )}
           </MiniFold>
         </div>
       </Fold>
