@@ -290,6 +290,19 @@ def build_catalog_card(row: asyncpg.Record) -> dict[str, Any]:
     }
 
 
+def build_catalog_candidate(row: asyncpg.Record) -> dict[str, Any]:
+    return {
+        "release_id": row["release_id"],
+        "master_id": row["master_id"],
+        "title": row["title"],
+        "artist": row["artists_sort"] or "",
+        "year": row["year"],
+        "country": row["country"] or "",
+        "uri": row["uri"] or "",
+        "thumb": row["thumb"] or "",
+    }
+
+
 def _norm_set(values: list[str]) -> set[str]:
     return {str(value).strip().lower() for value in values if str(value).strip()}
 
@@ -461,6 +474,37 @@ async def collect_catalog_search(filters: SearchFiltersLike, mode: str, discogs_
             final_payload = payload
     final_payload["items"] = items
     return final_payload
+
+
+async def collect_catalog_candidates(filters: SearchFiltersLike) -> dict[str, Any]:
+    connection = await open_catalog_connection()
+    try:
+        items: list[dict[str, Any]] = []
+        offset = 0
+
+        while True:
+            query = build_catalog_search_query(filters, False, CATALOG_BATCH_SIZE, offset, False)
+            rows = await connection.fetch(query)
+            if not rows:
+                break
+
+            for row in rows:
+                items.append(build_catalog_candidate(row))
+                if filters.tope_resultados > 0 and len(items) >= max(filters.tope_resultados * 10, filters.tope_resultados):
+                    return {"items": items, "count": len(items), "reason": "candidate_cap"}
+
+            if len(rows) < CATALOG_BATCH_SIZE:
+                break
+            offset += CATALOG_BATCH_SIZE
+
+        return {"items": items, "count": len(items), "reason": "catalog_candidates_complete"}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=format_catalog_error("La busqueda estructural del catalogo fallo", exc, filters),
+        ) from exc
+    finally:
+        await connection.close()
 
 
 async def _stream_local_catalog_search(

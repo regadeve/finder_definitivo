@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
-from api.catalog_search import collect_catalog_search, parse_catalog_search_mode, stream_catalog_search
+from api.catalog_search import collect_catalog_candidates, collect_catalog_search, parse_catalog_search_mode, stream_catalog_search
 
 load_dotenv()
 
@@ -730,6 +730,11 @@ async def search_stream(filters: SearchFilters):
 async def catalog_search(filters: SearchFilters, mode: str = "catalog-local"):
     backend = parse_catalog_search_mode(mode)
     return await collect_catalog_search(filters, backend, discogs_get)
+
+
+@app.post("/catalog/candidates")
+async def catalog_candidates(filters: SearchFilters):
+    return await collect_catalog_candidates(filters)
 
 
 @app.post("/catalog/search/stream")

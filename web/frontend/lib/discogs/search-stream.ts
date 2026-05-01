@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { loadCatalogDsn } from "@/lib/desktop/catalog-config";
+import { loadDiscogsToken } from "@/lib/desktop/discogs-token";
 import { toErrorMessage } from "@/lib/desktop/errors";
 import { isTauriRuntime } from "@/lib/desktop/runtime";
 
@@ -74,6 +75,10 @@ type SearchStreamOptions = {
   onStatus: (payload: StreamPayload) => void;
   onItem: (payload: StreamPayload) => void;
   onDone: (payload: StreamPayload) => void;
+};
+
+type RemoteHybridOptions = SearchStreamOptions & {
+  catalogApiUrl: string;
 };
 
 function getProxyApiUrl() {
@@ -231,6 +236,116 @@ function getBackendCommand(backend: SearchBackend) {
   return "start_discogs_search";
 }
 
+async function startRemoteHybridDesktopSearchStream({ userId, filters, signal, onStatus, onItem, onDone, catalogApiUrl }: RemoteHybridOptions) {
+  const tokenState = await loadDiscogsToken(userId);
+  if (!tokenState.hasToken) {
+    throw new Error("Catalogo + live necesita tu token personal de Discogs en Settings para refrescar los datos dinamicos.");
+  }
+
+  return new Promise<void>(async (resolve, reject) => {
+    let finished = false;
+    let searchId = "";
+    let firstEventSeen = false;
+    let inactivityNoticeTimer: number | null = null;
+
+    const clearInactivityNoticeTimer = () => {
+      if (inactivityNoticeTimer !== null) {
+        window.clearTimeout(inactivityNoticeTimer);
+        inactivityNoticeTimer = null;
+      }
+    };
+
+    const armInactivityNotice = (message: string, timeoutMs: number) => {
+      clearInactivityNoticeTimer();
+      inactivityNoticeTimer = window.setTimeout(() => {
+        if (finished) {
+          return;
+        }
+        onStatus({ message });
+        armInactivityNotice(message, timeoutMs);
+      }, timeoutMs);
+    };
+
+    let unlistenRef: (() => void) | null = null;
+
+    const abortHandler = () => {
+      if (searchId) {
+        void invoke("cancel_discogs_search", { searchId }).catch(() => undefined);
+      }
+      if (!finished) {
+        clearInactivityNoticeTimer();
+        unlistenRef?.();
+        reject(new DOMException("Search aborted", "AbortError"));
+      }
+    };
+
+    armInactivityNotice("La busqueda hibrida remota sigue preparando resultados con tu token personal.", 12000);
+
+    const unlisten = await listen<SearchEventEnvelope>("discogs-search", (event) => {
+      const envelope = event.payload;
+      if (!envelope) {
+        return;
+      }
+
+      if (!searchId && envelope.search_id) {
+        searchId = envelope.search_id;
+      }
+
+      if (envelope.search_id !== searchId) {
+        return;
+      }
+
+      firstEventSeen = true;
+      armInactivityNotice("La busqueda hibrida remota sigue consultando Discogs con tu token.", 45000);
+
+      if (envelope.event === "status") {
+        onStatus(envelope.payload);
+        return;
+      }
+
+      if (envelope.event === "item") {
+        onItem(envelope.payload);
+        return;
+      }
+
+      if (envelope.event === "done") {
+        finished = true;
+        signal.removeEventListener("abort", abortHandler);
+        clearInactivityNoticeTimer();
+        unlisten();
+
+        if (envelope.payload.reason === "error") {
+          reject(new Error(envelope.payload.message || "Fallo la busqueda hibrida remota."));
+          return;
+        }
+
+        onDone(envelope.payload);
+        resolve();
+      }
+    });
+    unlistenRef = unlisten;
+
+    if (signal.aborted) {
+      abortHandler();
+      return;
+    }
+
+    signal.addEventListener("abort", abortHandler, { once: true });
+
+    try {
+      searchId = await invoke<string>("start_remote_hybrid_search", { userId, filters, catalogApiUrl });
+      if (!firstEventSeen) {
+        armInactivityNotice("La busqueda hibrida remota arranco y sigue esperando candidatos del servidor.", 12000);
+      }
+    } catch (error) {
+      signal.removeEventListener("abort", abortHandler);
+      clearInactivityNoticeTimer();
+      unlisten();
+      reject(new Error(toErrorMessage(error, "No se pudo iniciar la busqueda hibrida remota.")));
+    }
+  });
+}
+
 function getBackendLabel(backend: SearchBackend) {
   if (backend === "catalog-local") {
     return "catalogo local PostgreSQL";
@@ -375,10 +490,15 @@ export function getSearchRuntimeLabel(backend: SearchBackend) {
 
 export async function startSearchStream(options: SearchStreamOptions) {
   const isDesktop = await isTauriRuntime();
+  const hasLocalDsn = isDesktop && (await hasLocalCatalogDsn());
 
   if (options.backend === "catalog-local" || options.backend === "catalog-hybrid") {
-    if (isDesktop && (await hasLocalCatalogDsn())) {
+    if (hasLocalDsn) {
       return startDesktopSearchStream(options);
+    }
+
+    if (isDesktop && options.backend === "catalog-hybrid") {
+      return startRemoteHybridDesktopSearchStream({ ...options, catalogApiUrl: getProxyApiUrl() });
     }
 
     return startCatalogProxySearchStream(options);

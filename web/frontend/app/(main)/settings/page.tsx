@@ -607,7 +607,7 @@ export default function SettingsPage() {
 
           <section className={panel("p-8 h-full")}>
             <h2 className="text-xl font-bold text-white mb-2">Catalogo PostgreSQL</h2>
-            <p className="text-zinc-400 text-sm mb-6">En desktop, `Catalogo local` y `Catalogo + live` usan primero tu DSN local si esta guardado. Si no existe, hacen fallback a la Catalog API remota.</p>
+            <p className="text-zinc-400 text-sm mb-6">En desktop, `Catalogo local` y `Catalogo + live` usan primero tu DSN local si esta guardado. Si no existe, consultan el catalogo remoto; en `Catalogo + live`, los datos dinamicos de Discogs se siguen refrescando con tu token personal.</p>
 
             <form onSubmit={onSaveCatalog} className="space-y-4 max-w-lg">
               <label className="block space-y-2">
@@ -636,7 +636,7 @@ export default function SettingsPage() {
               ) : null}
 
               <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-zinc-300">
-                `Discogs live` sigue usando tu token local. `Catalogo + live` usara el catalogo local si hay DSN guardado; si no, intentara la API remota.
+                `Discogs live` sigue usando tu token local. `Catalogo + live` usara el catalogo local si hay DSN guardado; si no, consultara el catalogo remoto y luego refrescara Discogs con tu token personal.
               </div>
 
               <div className="flex gap-3 pt-2">

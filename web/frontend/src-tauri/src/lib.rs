@@ -67,7 +67,7 @@ struct UpdaterManifestPlatform {
     url: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct SearchFilters {
     year_start: i64,
     year_end: i64,
@@ -108,6 +108,18 @@ struct SearchCard {
     has_youtube: bool,
     num_for_sale: i64,
     lowest_price: Option<f64>,
+    uri: String,
+    thumb: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HybridCatalogCandidate {
+    release_id: i64,
+    master_id: Option<i64>,
+    title: String,
+    artist: String,
+    year: Option<i64>,
+    country: String,
     uri: String,
     thumb: String,
 }
@@ -746,6 +758,71 @@ async fn run_catalog_search(
 }
 
 #[tauri::command]
+fn start_remote_hybrid_search(
+    app: AppHandle,
+    filters: SearchFilters,
+    user_id: String,
+    catalog_api_url: String,
+    registry: State<SearchRegistry>,
+) -> Result<String, String> {
+    let token = get_discogs_token(&user_id)?;
+    let search_id = format!(
+        "remote-hybrid-search-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_millis()
+    );
+
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    registry
+        .active
+        .lock()
+        .map_err(|_| "No se pudo preparar la busqueda hibrida remota".to_string())?
+        .insert(search_id.clone(), cancel_flag.clone());
+
+    let app_handle = app.clone();
+    let task_search_id = search_id.clone();
+
+    tauri::async_runtime::spawn(async move {
+        let result = match Client::builder()
+            .user_agent("103FinderDesktop/0.1")
+            .timeout(Duration::from_secs(30))
+            .build()
+        {
+            Ok(http_client) => {
+                run_remote_hybrid_search(
+                    app_handle.clone(),
+                    http_client,
+                    catalog_api_url,
+                    token,
+                    task_search_id.clone(),
+                    filters,
+                    cancel_flag,
+                )
+                .await
+            }
+            Err(error) => Err(error.to_string()),
+        };
+
+        if let Err(error) = result {
+            emit_search_event(
+                &app_handle,
+                &task_search_id,
+                "done",
+                json!({ "reason": "error", "message": error }),
+            );
+        }
+
+        if let Ok(mut active) = app_handle.state::<SearchRegistry>().active.lock() {
+            active.remove(&task_search_id);
+        }
+    });
+
+    Ok(search_id)
+}
+
+#[tauri::command]
 fn start_hybrid_search(
     app: AppHandle,
     filters: SearchFilters,
@@ -960,6 +1037,178 @@ async fn run_hybrid_search(
     );
 
     Ok(())
+}
+
+async fn run_remote_hybrid_search(
+    app: AppHandle,
+    http_client: Client,
+    catalog_api_url: String,
+    token: String,
+    search_id: String,
+    filters: SearchFilters,
+    cancel_flag: Arc<AtomicBool>,
+) -> Result<(), String> {
+    emit_search_event(
+        &app,
+        &search_id,
+        "status",
+        json!({ "message": "Consultando candidatos en el catalogo remoto...", "page": 0, "total_pages": 1, "found": 0, "processed": 0 }),
+    );
+
+    let candidates = fetch_remote_catalog_candidates(&http_client, &catalog_api_url, &filters).await?;
+    let total_candidates = candidates.len() as i64;
+
+    emit_search_event(
+        &app,
+        &search_id,
+        "status",
+        json!({
+            "message": format!("Catalogo remoto listo. {} candidatos; ahora se refrescan detalles con tu token personal.", total_candidates),
+            "page": 1,
+            "total_pages": 1,
+            "found": 0,
+            "processed": 0
+        }),
+    );
+
+    let mut found = 0_i64;
+    let mut processed = 0_i64;
+
+    for candidate in candidates {
+        if cancel_flag.load(AtomicOrdering::Relaxed) {
+            emit_search_event(
+                &app,
+                &search_id,
+                "done",
+                json!({ "found": found, "processed": processed, "reason": "cancelled" }),
+            );
+            return Ok(());
+        }
+
+        processed += 1;
+        let release_url = format!("{BASE_URL}/releases/{}", candidate.release_id);
+        let details = match discogs_get(&http_client, &release_url, &token, None).await {
+            Ok(value) => value,
+            Err(_) => {
+                emit_search_event(
+                    &app,
+                    &search_id,
+                    "status",
+                    json!({
+                        "page": 1,
+                        "total_pages": 1,
+                        "found": found,
+                        "processed": processed,
+                        "message": format!("Hibrido remoto · Discogs no devolvio {}. Se sigue con el resto.", candidate.release_id)
+                    }),
+                );
+                continue;
+            }
+        };
+
+        if !passes_details(&details, &filters) {
+            emit_search_event(
+                &app,
+                &search_id,
+                "status",
+                json!({
+                    "page": 1,
+                    "total_pages": 1,
+                    "found": found,
+                    "processed": processed,
+                    "message": format!("Hibrido remoto · procesados {} de {} · encontrados {}", processed, total_candidates, found)
+                }),
+            );
+            continue;
+        }
+
+        let item = json!({
+            "thumb": candidate.thumb,
+            "uri": candidate.uri,
+            "title": candidate.title,
+            "artist": candidate.artist,
+            "year": candidate.year,
+            "country": candidate.country,
+        });
+        let card = build_card(&item, &details);
+        found += 1;
+
+        emit_search_event(
+            &app,
+            &search_id,
+            "item",
+            json!({ "idx": found, "card": card }),
+        );
+
+        emit_search_event(
+            &app,
+            &search_id,
+            "status",
+            json!({
+                "page": 1,
+                "total_pages": 1,
+                "found": found,
+                "processed": processed,
+                "message": format!("Hibrido remoto · procesados {} de {} · encontrados {}", processed, total_candidates, found)
+            }),
+        );
+
+        if filters.tope_resultados > 0 && found >= filters.tope_resultados {
+            emit_search_event(
+                &app,
+                &search_id,
+                "done",
+                json!({ "found": found, "processed": processed, "reason": "tope_resultados" }),
+            );
+            return Ok(());
+        }
+    }
+
+    emit_search_event(
+        &app,
+        &search_id,
+        "done",
+        json!({ "found": found, "processed": processed, "reason": "remote_hybrid_complete" }),
+    );
+
+    Ok(())
+}
+
+async fn fetch_remote_catalog_candidates(
+    client: &Client,
+    catalog_api_url: &str,
+    filters: &SearchFilters,
+) -> Result<Vec<HybridCatalogCandidate>, String> {
+    let base = catalog_api_url.trim_end_matches('/');
+    let url = format!("{base}/catalog/candidates");
+    let response = client
+        .post(&url)
+        .json(filters)
+        .send()
+        .await
+        .map_err(|error| format!("No se pudo consultar el catalogo remoto: {error}"))?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("El catalogo remoto respondio con {}: {}", status.as_u16(), body));
+    }
+
+    let payload = response
+        .json::<Value>()
+        .await
+        .map_err(|error| format!("No se pudo leer la respuesta del catalogo remoto: {error}"))?;
+    let items = payload
+        .get("items")
+        .and_then(|value| value.as_array())
+        .ok_or_else(|| "El catalogo remoto no devolvio candidatos validos.".to_string())?;
+
+    items
+        .iter()
+        .cloned()
+        .map(serde_json::from_value::<HybridCatalogCandidate>)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("No se pudieron interpretar los candidatos remotos: {error}"))
 }
 
 fn build_catalog_search_query(
@@ -1915,6 +2164,7 @@ pub fn run() {
             install_app_update,
             start_discogs_search,
             start_catalog_search,
+            start_remote_hybrid_search,
             start_hybrid_search,
             cancel_discogs_search
         ])

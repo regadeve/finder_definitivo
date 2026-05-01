@@ -15,7 +15,8 @@ Esta copia ya empieza la migracion a app de escritorio con `Tauri` en `web/front
 - La pantalla inicial de configuracion desktop esta en `web/frontend/app/settings/page.tsx`.
 - El token local de Discogs se guardara en el llavero seguro del sistema mediante comandos nativos de Tauri.
 - La app desktop mantiene `Discogs live` en Tauri con token local del usuario.
-- Los modos `Catalogo local` y `Catalogo + live` ya pasan por la API remota, para no depender de un PostgreSQL instalado en cada PC.
+- `Catalogo local` puede salir contra la API remota para no depender de un PostgreSQL instalado en cada PC.
+- `Catalogo + live` debe usar el token personal del usuario para la parte live de Discogs; si no hay DSN local, la app primero pide candidatos al catalogo remoto y luego refresca Discogs desde desktop.
 
 ## Estado actual
 
@@ -91,13 +92,13 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 En desktop, `NEXT_PUBLIC_API_URL` se usa para las rutas remotas de catalogo. `Discogs live` sigue ejecutandose de forma nativa dentro de Tauri.
 
-Ahora tambien se usa para `Catalogo local` y `Catalogo + live`, porque ambos modos salen contra la API remota del catalogo.
+En desktop se usa como origen remoto del catalogo cuando no hay DSN local guardado. En `Catalogo + live`, el servidor solo devuelve candidatos y la app desktop hace la parte live con el token personal del usuario.
 
 ## Catalogo remoto
 
 - `POST /catalog/search`: devuelve resultados agregados del catalogo remoto.
 - `POST /catalog/search/stream?mode=catalog-local`: streaming SSE solo contra PostgreSQL.
-- `POST /catalog/search/stream?mode=catalog-hybrid`: prefiltra en PostgreSQL y refresca detalles live desde Discogs.
+- `POST /catalog/candidates`: devuelve candidatos estructurales del catalogo remoto para que la desktop complete la parte live con el token del usuario.
 - PostgreSQL debe seguir escuchando en `127.0.0.1`; la app cliente no se conecta ya por DSN directo.
 
 ## Despliegue Hetzner
