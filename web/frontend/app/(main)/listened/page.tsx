@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getDiscogsHref, openDiscogsRelease, openGoogleSearch } from "@/lib/discogs/url";
+import { appRoutes } from "@/lib/routes";
 import { createClient } from "@/lib/supabase/client";
 import { upsertUserReleaseState, type ReleaseCardPayload } from "@/lib/supabase/user-releases";
 import { navigateWithTransition } from "@/lib/view-transition";
@@ -65,7 +66,7 @@ export default function ListenedPage() {
       const { data } = await supabase.auth.getSession();
       if (!active) return;
       if (!data.session) {
-        navigateWithTransition(router, "/", "replace");
+        navigateWithTransition(router, appRoutes.home, "replace");
         return;
       }
 
@@ -97,7 +98,7 @@ export default function ListenedPage() {
   async function logout() {
     setLoggingOut(true);
     await supabase.auth.signOut();
-    navigateWithTransition(router, "/", "replace");
+    navigateWithTransition(router, appRoutes.home, "replace");
     setLoggingOut(false);
   }
 
@@ -225,8 +226,8 @@ export default function ListenedPage() {
 
         <section className={`${panel("animate-fade-up-soft p-5 md:p-6")} [animation-delay:120ms]`}>
           <div className="flex flex-wrap gap-3">
-            <button type="button" onClick={() => navigateWithTransition(router, "/search")} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-white/[0.08]">Buscador (Finder)</button>
-            <button type="button" onClick={() => navigateWithTransition(router, "/favorites")} className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm font-medium text-amber-100 transition hover:bg-amber-400/20">Ver favoritos</button>
+            <button type="button" onClick={() => navigateWithTransition(router, appRoutes.search)} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-white/[0.08]">Buscador (Finder)</button>
+            <button type="button" onClick={() => navigateWithTransition(router, appRoutes.favorites)} className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm font-medium text-amber-100 transition hover:bg-amber-400/20">Ver favoritos</button>
             <button type="button" onClick={logout} disabled={loggingOut} className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm font-medium text-rose-100 transition hover:bg-rose-400/20 disabled:opacity-50">{loggingOut ? "Cerrando..." : "Cerrar sesion"}</button>
           </div>
 

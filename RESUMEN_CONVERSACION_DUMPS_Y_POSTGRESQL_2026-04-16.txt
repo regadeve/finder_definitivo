@@ -1,0 +1,459 @@
+RESUMEN DE CONVERSACION - DUMPS DISCOGS, POSTGRESQL Y OPTIMIZACION DE 103 FINDER
+Fecha: 2026-04-16
+Proyecto: PROJECT_3_4 / 103 FINDER
+
+1. OBJETIVO GENERAL
+
+Se quiere redisenar el flujo de busqueda de 103 FINDER para que sea mucho mas rapido y preciso, especialmente en busquedas complejas con muchos filtros. La idea principal es usar los dumps mensuales de Discogs para resolver localmente o en servidor la parte estructural del catalogo, y dejar la API live de Discogs solo para los datos dinamicos realmente importantes.
+
+
+2. CONTEXTO DE LA APP ACTUAL
+
+La app actual usa Discogs para buscar releases y filtrar resultados. El flujo principal de busqueda desktop se apoya en estos archivos:
+
+- web/frontend/src-tauri/src/lib.rs
+- web/frontend/lib/discogs/search-stream.ts
+- web/frontend/lib/search/session.ts
+
+El flujo actual hace:
+
+- llamada a /database/search
+- por cada candidato, llamada a details del release
+- a veces fallback a main_release
+- si el filtro de versiones esta activo, llamada a masters/{id}/versions
+
+Esto hace que algunas busquedas grandes tarden mucho y puedan parecer bloqueadas o silenciosas.
+
+
+3. CAMBIO YA APLICADO EN LA APP
+
+Se modifico el watchdog de la busqueda para que ya no corte automaticamente la busqueda cuando Discogs tarda en responder. En vez de abortar, ahora muestra mensajes informativos y deja la busqueda viva hasta que llegue done o el usuario cancele.
+
+Archivos modificados:
+
+- web/frontend/lib/discogs/search-stream.ts
+- web/frontend/lib/search/session.ts
+
+
+4. PUBLICACION DE LA VERSION 0.1.3
+
+Se encontro la clave de firma del updater en:
+
+- C:\Users\deves\.tauri\103finder-updater.key
+
+Con esa clave se firmo y publico la version 0.1.3.
+
+Resultado:
+
+- latest.json publico en 0.1.3
+- landing publica mostrando v0.1.3
+- instalador publico accesible
+
+Commit de la landing publica:
+
+- 3731b33 - publish desktop app 0.1.3 update
+
+
+5. INVESTIGACION SOBRE LA API DE DISCOGS
+
+Se reviso la documentacion publica de Discogs:
+
+- https://www.discogs.com/developers/
+
+Puntos importantes:
+
+- rate limit autenticado: 60 requests por minuto por IP
+- rate limit no autenticado: 25 requests por minuto por IP
+- headers importantes: X-Discogs-Ratelimit, X-Discogs-Ratelimit-Used, X-Discogs-Ratelimit-Remaining
+- Discogs exige User-Agent unico y claro
+- existen monthly data dumps del catalogo
+
+
+6. ACLARACION SOBRE LOS FILTROS Y EL RENDIMIENTO
+
+Se analizo que filtros afectan mas al rendimiento en el flujo actual. El orden aproximado de impacto quedo asi:
+
+1. max_versions
+2. have_min / have_max
+3. want_min / want_max
+4. precio_minimo / precio_maximo
+5. solo_en_venta / max_copias_venta
+6. youtube_status
+7. not_on_label_only
+8. exclude_various
+9. strict_genre / strict_style
+10. formats_selected
+11. genres / styles
+12. countries_selected
+13. year_start / year_end / sin_anyo
+14. type_selected
+
+Conclusiones clave:
+
+- max_versions es el filtro mas caro cuando esta activo
+- have, want, precio y copias son prioritarios funcionalmente y dependen de details
+- youtube necesita details.videos, pero no suele anadir una request extra distinta de details; afecta menos que versions
+- versions solo deberia consultarse cuando el filtro este activado de verdad
+
+
+7. PRUEBA REAL SOBRE MULTIPLES STYLES EN DISCOGS
+
+Se hizo una prueba directa contra la API de Discogs, fuera del programa, para ver si repetir el parametro style hacia un AND real.
+
+Pruebas:
+
+- genre=Electronic&style=Techno&year=1991-1995
+- genre=Electronic&style=Techno&style=Synth-pop&year=1991-1995
+- genre=Electronic&style=Synth-pop&year=1991-1995
+- genre=Electronic&style=Synth-pop&style=Techno&year=1991-1995
+
+Resultado observado:
+
+- Techno solo -> 54236 items
+- Techno + Synth-pop -> tambien 54236 items y mismos primeros resultados Techno
+- Synth-pop solo -> 49013 items
+- Synth-pop + Techno -> vuelve a resultados equivalentes a Techno
+
+Conclusion:
+
+- no se puede confiar en que Discogs haga AND real al mandar multiples parametros style
+- repetir style no garantiza precision
+- por eso la app debe validar localmente el AND de estilos si se quiere exactitud
+
+
+8. IDEA PRINCIPAL A DESARROLLAR
+
+La idea estrategica principal es:
+
+- descargar los monthly data dumps de Discogs
+- importarlos en una base propia
+- hacer el filtrado estructural en esa base propia
+- obtener una lista corta y precisa de IDs candidatos
+- solo despues consultar Discogs live para datos dinamicos
+
+Ventajas:
+
+- AND real de estilos y generos
+- mucho menos trafico a Discogs
+- menos riesgo de rate limit
+- mejor velocidad en busquedas complejas
+- control total sobre filtros estructurales
+
+
+9. QUE DEBERIA SALIR DEL DUMP Y QUE DE LA API LIVE
+
+9.1 De la base propia basada en dumps:
+
+- year_start / year_end
+- sin_anyo
+- genres
+- styles
+- strict_genre
+- strict_style
+- countries_selected
+- formats_selected
+- type_selected
+- not_on_label_only
+- exclude_various
+- max_versions
+- artists
+- labels
+- tracklist
+- identifiers
+- companies
+- relaciones master/release
+
+9.2 De Discogs live:
+
+- have_min / have_max
+- want_min / want_max
+- precio_minimo / precio_maximo
+- solo_en_venta
+- max_copias_venta
+- lowest_price
+- num_for_sale
+- collection del usuario
+- wantlist del usuario
+- ratings de usuario
+
+9.3 Campo intermedio:
+
+- youtube_status: posible hacerlo mixto o live; inicialmente mejor no convertirlo en el eje de la arquitectura
+
+Conclusion practica:
+
+- estilos, generos, anos, paises, formatos, various, labels y versions deben resolverse en la base propia
+- have, want, precio y copias deben seguir yendo por API live
+
+
+10. DUMPS QUE HAY QUE DESCARGAR
+
+No hace falta descargar historicos por ano. Un dump actual ya es un snapshot completo del catalogo disponible en Discogs en ese momento, incluyendo releases antiguos y modernos.
+
+Los 4 dumps recomendados son:
+
+- discogs_YYYYMMDD_releases.xml.gz
+- discogs_YYYYMMDD_masters.xml.gz
+- discogs_YYYYMMDD_artists.xml.gz
+- discogs_YYYYMMDD_labels.xml.gz
+
+Y tambien:
+
+- discogs_YYYYMMDD_CHECKSUM.txt
+
+Prioridad:
+
+1. releases
+2. masters
+3. artists
+4. labels
+
+
+11. DUMPS ACTUALES IDENTIFICADOS Y TAMAÑO
+
+Para el snapshot 2026-04-01 se identificaron estos tamanos:
+
+- releases: 10.2 GB
+- masters: 578.4 MB
+- artists: 462.8 MB
+- labels: 83.9 MB
+
+Total comprimido aproximado:
+
+- 11.33 GB
+
+
+12. ESPACIO NECESARIO
+
+Conclusiones aproximadas:
+
+12.1 Solo para almacenar los dumps comprimidos:
+
+- snapshot actual: ~11.33 GB
+- reservar 15 GB para ir comodo
+
+12.2 Para trabajar con ellos, importar y descomprimir:
+
+- minimo comodo: 80-150 GB
+- mejor: 150-250 GB
+
+12.3 Para la base de datos final:
+
+- modo minimo util: 30-60 GB
+- modo recomendado para 103 Finder: 50-100 GB
+- modo amplio: 100-200+ GB
+
+Recomendacion operativa:
+
+- pensar en 80-120 GB de BD final y 200 GB de espacio comodo si se quiere trabajar tranquilo
+
+
+13. RESPUESTA A SI BASTA EL DUMP DE ESTE MES
+
+Si. Para el catalogo historico actual de Discogs, basta con el dump actual. No hace falta descargar un dump por cada ano. El dump actual incluye material de 1978 hasta la actualidad y tambien anterior, siempre que este presente en Discogs.
+
+Lo que no sustituye el dump:
+
+- have / want actuales
+- precios y copias en venta
+- marketplace
+- datos de usuario
+- cambios futuros hasta el siguiente dump mensual
+
+
+14. PROPUESTA DE MODELO DE DATOS
+
+En vez de guardar listas gigantes tipo "todos los IDs techno", se propuso una BD indexada con tablas relacionales.
+
+Tablas principales:
+
+- releases
+- masters
+- artists
+- labels
+
+Tablas relacionales:
+
+- release_styles
+- release_genres
+- release_formats
+- release_artists
+- release_labels
+
+Tablas opcionales utiles:
+
+- release_tracklist
+- release_identifiers
+- release_companies
+
+Ejemplo de AND real de estilos en SQL:
+
+select release_id
+from release_styles
+where style in ('Techno', 'Synth-pop')
+group by release_id
+having count(distinct style) = 2;
+
+
+15. COMO RESOLVER MAX_VERSIONS CON LOS DUMPS
+
+Se concluyo que max_versions es uno de los mejores filtros para mover al dump.
+
+Idea correcta:
+
+- no pedir masters/{id}/versions a Discogs cada vez
+- usar la relacion release -> master_id del dump
+- contar cuantas releases pertenecen a cada master
+
+Tabla recomendada:
+
+- master_version_counts(master_id, version_count)
+
+Ejemplo de calculo:
+
+create table master_version_counts as
+select master_id, count(*) as version_count
+from releases
+where master_id is not null
+group by master_id;
+
+Con eso, max_versions se puede filtrar localmente sin requests live.
+
+
+16. ARQUITECTURA RECOMENDADA
+
+Arquitectura ideal:
+
+- Base propia/PostgreSQL: catalogo Discogs estructural
+- Discogs API live: have, want, precio, copias, collection/wantlist y datos dinamicos
+- Supabase: auth, usuarios, favoritos, metricas, billing y datos propios de la app
+- Desktop app: cliente principal con token local del usuario
+
+Flujo ideal:
+
+1. la app consulta primero la base propia para filtrar estilos/generos/ano/pais/formato/versions/etc.
+2. obtiene una lista corta de IDs candidatos
+3. luego llama a Discogs live solo para have, want, precio y copias
+4. devuelve resultados finales
+
+
+17. ESTIMACION DE MEJORA DE RENDIMIENTO
+
+Para busquedas muy complejas con casi todos los filtros activos, se estimo una mejora realista aproximada de:
+
+- 70% a 90% mas rapida
+- en algunos casos pesados, 3x a 10x mas rapida
+
+Motivo principal:
+
+- ahora la app puede llegar a hacer cientos de details y muchas calls de versions
+- con la base propia, se filtran la mayoria de candidatos antes de tocar Discogs live
+
+
+18. COSTES E INFRAESTRUCTURA FUTURA
+
+Opciones de alojamiento de PostgreSQL para catalogo:
+
+1. VPS propio
+- 20-50 EUR/mes
+- mas barato
+- mas administracion
+
+2. Neon + API aparte
+- 50-110 EUR/mes
+- buen equilibrio tecnico
+
+3. Railway Pro
+- 70-100 USD/mes aproximadamente para este escenario
+- mas simple, mas caro
+
+Almacenamiento de dumps crudos:
+
+- Cloudflare R2
+- Backblaze B2
+
+Recomendacion:
+
+- no usar Supabase Postgres como catalogo principal de Discogs
+- usar Supabase para datos de la app y un PostgreSQL separado para el catalogo
+
+
+19. DECISION SOBRE EL ENTORNO DE TRABAJO ACTUAL
+
+Como en el ordenador principal solo habia 40 GB libres, se decidio no hacer la importacion completa ahi.
+
+Plan acordado:
+
+- descargar e importar los dumps en otro ordenador
+- montar PostgreSQL localmente en ese otro ordenador
+- validar alli las consultas y el modelo
+- mas adelante, cuando todo funcione, subir PostgreSQL a un servidor
+
+
+20. PASOS ACORDADOS A PARTIR DE AHORA
+
+20.1 En el otro ordenador:
+
+1. instalar PostgreSQL
+2. crear base de datos discogs_catalog
+3. crear usuario discogs_app
+4. crear el esquema SQL del catalogo
+5. descargar los 4 dumps actuales y el checksum
+6. importar en este orden:
+   - artists
+   - labels
+   - masters
+   - releases
+7. crear indices
+8. calcular master_version_counts
+9. probar consultas reales con estilos AND, ano, pais, formato y max_versions
+
+20.2 Despues:
+
+10. crear un catalog-api pequeno, preferiblemente en FastAPI
+11. ese API debe recibir filtros estructurales y devolver IDs candidatos
+12. integrar la app para que consulte primero el catalogo y luego Discogs live solo para datos dinamicos
+
+20.3 Mas adelante:
+
+13. elegir servidor definitivo para PostgreSQL
+14. migrar la base desde local al servidor
+15. desplegar el catalog-api junto a la BD o cerca de ella
+
+
+21. COMO PREPARAR POSTGRESQL LOCALMENTE
+
+Se explico un flujo general:
+
+1. instalar PostgreSQL en el otro ordenador
+2. crear base:
+   - CREATE DATABASE discogs_catalog;
+3. crear usuario:
+   - CREATE USER discogs_app WITH PASSWORD 'TU_PASSWORD';
+4. dar permisos a la base y al schema public
+5. crear tablas principales y relacionales
+6. crear indices
+7. posteriormente rellenar master_version_counts
+
+Tambien se comento que no hace falta desde el primer momento ponerlo ya en servidor. Primero se valida todo en local.
+
+
+22. PREGUNTA ABIERTA PENDIENTE / SIGUIENTE PASO TECNICO
+
+El siguiente paso natural es preparar uno de estos entregables:
+
+1. script SQL completo para crear la base y las tablas
+2. plan exacto de importacion de dumps
+3. importador en Python en streaming
+4. diseno del catalog-api
+
+
+23. IDEA CLAVE A RECORDAR
+
+La idea principal del proyecto es:
+
+- usar dumps para resolver toda la parte estructural del catalogo y hacer AND real de estilos/generos
+- usar Discogs live solo para have, want, precio y copias
+- mover max_versions a la base propia usando master_id y master_version_counts
+
+Esto es la base del rediseño de busqueda futura de 103 FINDER.

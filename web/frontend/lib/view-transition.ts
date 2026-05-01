@@ -1,3 +1,5 @@
+import { normalizeAppPath } from "@/lib/routes";
+
 type RouterLike = {
   push: (href: string) => void;
   replace: (href: string) => void;
@@ -15,11 +17,12 @@ export function navigateWithTransition(
   href: string,
   method: "push" | "replace" = "push"
 ) {
+  const normalizedHref = normalizeAppPath(href);
   window.dispatchEvent(new CustomEvent("app:navigation-start"));
 
   const doc = document as TransitionDocument;
   const navigate = () => {
-    router[method](href);
+    router[method](normalizedHref);
     router.refresh();
   };
 

@@ -6,8 +6,8 @@ from core.discogs_client import DiscogsClient
 from core.models import SearchFilters
 from core.search import search_discogs_stream
 
-st.set_page_config(page_title="Discogs Finder", layout="wide")
-st.title("🎵 Discogs Finder")
+st.set_page_config(page_title="103 FINDER", layout="wide")
+st.title("🎵 103 FINDER")
 
 # --- Sidebar token ---
 st.sidebar.title("🔐 Discogs Auth")
@@ -18,7 +18,7 @@ if not discogs_token:
     st.stop()
 
 HEADERS = {
-    "User-Agent": "DiscogsFinder/1.0 (mireia@local)",
+    "User-Agent": "103Finder/1.0 (mireia@local)",
     "Authorization": f"Discogs token={discogs_token.strip()}",
 }
 
@@ -37,7 +37,7 @@ col1, col2 = st.columns(2)
 with col1:
     year_start = st.number_input("Año de inicio", 1950, 2025, 1995)
     year_end = st.number_input("Año de fin", 1950, 2025, 1995)
-    have_limit = st.number_input("Máx. Have (cuántos lo tienen)", min_value=0, value=20)
+    have_max = st.number_input("Máx. Have (cuántos lo tienen)", min_value=0, value=20)
 
 with col2:
     max_versions = st.number_input("Máx. versiones", min_value=0, value=2)
@@ -106,7 +106,7 @@ if st.button("🔍 Buscar en Discogs"):
     filters = SearchFilters(
         year_start=year_start,
         year_end=year_end,
-        have_limit=have_limit,
+        have_max=have_max,
         max_versions=max_versions,
         country=country.strip(),
         format_selected=format_selected,

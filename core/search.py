@@ -11,7 +11,7 @@ FoundCallback = Callable[[dict, int], None]
 
 def build_search_params(f: SearchFilters) -> Dict[str, Any]:
     return {
-        "per_page": 100,  # más rápido
+        "per_page": 100,
         "page": 1,
         "sort": "title",
         "sort_order": "asc",
@@ -26,8 +26,13 @@ def build_search_params(f: SearchFilters) -> Dict[str, Any]:
 
 
 def pasa_filtros_detalle(details: dict, f: SearchFilters) -> bool:
-    have = details.get("community", {}).get("have", 9999)
-    if have >= f.have_limit:
+    have = details.get("community", {}).get("have", 0)
+
+    # RANGO DE HAVE
+    if have < int(f.have_min):
+        return False
+
+    if int(f.have_max) > 0 and have > int(f.have_max):
         return False
 
     release_year = details.get("year", None)
@@ -46,6 +51,7 @@ def pasa_filtros_detalle(details: dict, f: SearchFilters) -> bool:
     # AND styles
     if f.styles and not set(s.lower() for s in f.styles).issubset({s.lower() for s in release_styles}):
         return False
+
     # strict styles
     if f.strict_style and set(map(str.lower, release_styles)) != set(map(str.lower, f.styles)):
         return False
@@ -53,6 +59,7 @@ def pasa_filtros_detalle(details: dict, f: SearchFilters) -> bool:
     # AND genres
     if f.genres and not set(g.lower() for g in f.genres).issubset({g.lower() for g in release_genres}):
         return False
+
     # strict genres
     if f.strict_genre and set(map(str.lower, release_genres)) != set(map(str.lower, f.genres)):
         return False
@@ -61,8 +68,14 @@ def pasa_filtros_detalle(details: dict, f: SearchFilters) -> bool:
     if f.solo_en_venta and (details.get("num_for_sale", 0) <= 0):
         return False
 
-    if f.precio_minimo and isinstance(details.get("lowest_price", None), (int, float)):
-        if float(details["lowest_price"]) < float(f.precio_minimo):
+    if f.precio_minimo or f.precio_maximo:
+        if not isinstance(details.get("lowest_price", None), (int, float)):
+            return False
+
+        price_value = float(details["lowest_price"])
+        if f.precio_minimo and price_value < float(f.precio_minimo):
+            return False
+        if f.precio_maximo and price_value > float(f.precio_maximo):
             return False
 
     if f.max_copias_venta and details.get("num_for_sale", 0) > int(f.max_copias_venta):
@@ -95,11 +108,9 @@ def search_discogs_stream(
 
     params = build_search_params(f)
 
-    # first page to get total pages
     first = client.get(search_url, params=params)
     total_pages = int(first.get("pagination", {}).get("pages", 1))
 
-    # si no hay tope de resultados, limita páginas para no eternizarse
     if not (f.tope_resultados and int(f.tope_resultados) > 0):
         total_pages = min(total_pages, int(max_pages))
 
@@ -132,7 +143,6 @@ def search_discogs_stream(
             if not pasa_filtros_detalle(details, f):
                 continue
 
-            # versions filter
             master_id = details.get("master_id")
             if master_id and f.max_versions:
                 try:
@@ -161,7 +171,6 @@ def search_discogs_stream(
             resultados.append(card)
             found += 1
 
-            # ✅ streaming: lo pintas al momento desde app.py
             if on_found:
                 on_found(card, found)
 

@@ -3,8 +3,9 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { appRoutes } from "@/lib/routes";
 import { fetchUserAccessStatus, type UserAccessStatus } from "@/lib/supabase/access";
-import { createCheckoutSession, createPortalSession } from "@/lib/billing/api";
+import { createCheckoutSession, createPortalSession, getBillingApiAvailability } from "@/lib/billing/api";
 import { navigateWithTransition } from "@/lib/view-transition";
 
 function formatDate(value: string | null) {
@@ -22,6 +23,7 @@ function BillingPageContent() {
   const [busy, setBusy] = useState(false);
   const [access, setAccess] = useState<UserAccessStatus | null>(null);
   const [message, setMessage] = useState("");
+  const [billingApiAvailable, setBillingApiAvailable] = useState(true);
 
   useEffect(() => {
     let active = true;
@@ -32,14 +34,18 @@ function BillingPageContent() {
       } = await supabase.auth.getSession();
 
       if (!session) {
-        if (active) router.replace("/");
+        if (active) router.replace(appRoutes.home);
         return;
       }
 
       try {
-        const nextAccess = await fetchUserAccessStatus(supabase, session.user.id);
+        const [nextAccess, billingApi] = await Promise.all([
+          fetchUserAccessStatus(supabase, session.user.id),
+          getBillingApiAvailability(),
+        ]);
         if (!active) return;
         setAccess(nextAccess);
+        setBillingApiAvailable(billingApi.ok);
 
         if (searchParams.get("checkout") === "success") {
           setMessage("Pago recibido. Si Stripe ya confirmo la suscripcion, en unos segundos tendras acceso.");
@@ -47,6 +53,8 @@ function BillingPageContent() {
           setMessage("La suscripcion se cancelo antes de completar el pago.");
         } else if (nextAccess.canUseApp) {
           setMessage("Tu acceso esta listo.");
+        } else if (!billingApi.ok) {
+          setMessage(`Tu cuenta existe, pero ahora mismo el servidor de pagos no responde (${billingApi.baseUrl}). Intentalo de nuevo mas tarde.`);
         }
       } catch (error) {
         if (active) {
@@ -65,7 +73,7 @@ function BillingPageContent() {
   async function onSubscribe() {
     setBusy(true);
     try {
-      const { url } = await createCheckoutSession(supabase, "/billing");
+      const { url } = await createCheckoutSession(supabase, appRoutes.billing);
       window.location.href = url;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo iniciar el pago.");
@@ -76,7 +84,7 @@ function BillingPageContent() {
   async function onPortal() {
     setBusy(true);
     try {
-      const { url } = await createPortalSession(supabase, "/billing");
+      const { url } = await createPortalSession(supabase, appRoutes.billing);
       window.location.href = url;
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "No se pudo abrir el portal de Stripe.");
@@ -86,7 +94,7 @@ function BillingPageContent() {
 
   async function logout() {
     await supabase.auth.signOut();
-    router.replace("/");
+    router.replace(appRoutes.home);
   }
 
   if (loading) {
@@ -141,7 +149,7 @@ function BillingPageContent() {
               {access?.canUseApp ? (
                 <button
                   type="button"
-                  onClick={() => navigateWithTransition(router, "/search")}
+                  onClick={() => navigateWithTransition(router, appRoutes.search)}
                   className="rounded-2xl bg-cyan-400 px-5 py-3 text-sm font-semibold text-black transition hover:brightness-110"
                 >
                   Entrar a la app
@@ -150,15 +158,15 @@ function BillingPageContent() {
               <button
                 type="button"
                 onClick={() => void onSubscribe()}
-                disabled={busy}
+                disabled={busy || !billingApiAvailable}
                 className="rounded-2xl border border-white/10 bg-white px-5 py-3 text-sm font-semibold text-black transition hover:brightness-95 disabled:opacity-50"
               >
-                {busy ? "Abriendo Stripe..." : "Suscribirme por 10 EUR/mes"}
+                {busy ? "Abriendo Stripe..." : billingApiAvailable ? "Suscribirme por 10 EUR/mes" : "Pagos temporalmente no disponibles"}
               </button>
               <button
                 type="button"
                 onClick={() => void onPortal()}
-                disabled={busy || !access?.stripeCustomerId}
+                disabled={busy || !billingApiAvailable || !access?.stripeCustomerId}
                 className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08] disabled:opacity-50"
               >
                 Gestionar suscripcion

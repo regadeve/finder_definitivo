@@ -1,0 +1,385 @@
+Contexto detallado para retomar PROJECT_3_4 en el futuro
+
+Vision general del proyecto
+- PROJECT_3_4 es una aplicacion enfocada en busqueda avanzada dentro de Discogs.
+- La idea de producto ha evolucionado hacia una experiencia principal de escritorio, no solo web.
+- La arquitectura actual mezcla varias piezas:
+  - frontend principal en Next.js
+  - shell desktop en Tauri
+  - backend original mas amplio
+  - nuevo backend minimo y separado para billing con Stripe
+  - landing publica independiente para marketing, descarga y validacion comercial
+
+Estructura actual del proyecto principal
+- web/frontend
+  - es la aplicacion principal en Next.js
+  - contiene login, billing, vistas internas y la base desktop con Tauri
+- web/frontend/src-tauri
+  - shell de escritorio con Tauri
+  - objetivo: distribuir la app final como aplicacion de escritorio
+- api
+  - backend original mas grande
+  - incluye logica adicional del proyecto, no solo Stripe
+  - se decidio no exponerlo entero publicamente para la parte de pagos
+- billing-api
+  - backend minimo nuevo, separado, solo para Stripe + Supabase
+- public-landing
+  - landing publica independiente para Vercel y dominio publico
+
+Estado funcional del producto
+- La app principal local llego a arrancarse correctamente:
+  - frontend en http://localhost:3000
+  - API local en http://127.0.0.1:8000
+- Tambien se llego a arrancar la version desktop en modo desarrollo con:
+  - npm run desktop:dev
+- Se aclaro una decision importante:
+  - el acceso directo local actual abre terminal porque usa modo desarrollo
+  - para usuarios finales habra que usar build empaquetada de Tauri, no desktop:dev
+
+Decisiones estrategicas ya tomadas
+- La version final que se quiere vender sera desktop
+- Se quiere cobrar con suscripcion mensual de 10 EUR
+- Se empieza como autonomo y mas adelante se migrara a empresa
+- Para produccion no se quiere exponer el backend completo de la app
+- Se quiere mantener separado:
+  - web publica / marketing / descarga
+  - app principal
+  - backend de pagos
+- Se decidio crear:
+  - una landing publica separada
+  - una billing API independiente y minima
+
+Dominio y presencia publica
+- Se compro el dominio 103finder.shop en Namecheap
+- Este dominio se compro inicialmente como dominio de prueba / validacion
+- La idea expresada fue:
+  - usar este dominio para pruebas
+  - mas adelante, si cambia el naming, comprar otro dominio oficial
+  - no se quiere redirigir necesariamente el dominio de pruebas si se abandona
+- Se aclaro que un dominio no se renombra; si cambia el naming habra que comprar otro dominio
+
+Landing publica
+- Se creo un proyecto independiente llamado public-landing
+- Esta pensado como repo separado del proyecto principal
+- Su objetivo es:
+  - presentar el proyecto
+  - servir como web de negocio para Stripe
+  - centralizar la descarga de la app
+  - ofrecer paginas legales minimas
+- El contenido creado incluye:
+  - portada del producto
+  - seccion de descarga
+  - pagina de privacidad
+  - pagina de terminos
+  - pagina de contacto
+- Variables de entorno previstas para la landing:
+  - NEXT_PUBLIC_APP_DOWNLOAD_URL
+  - NEXT_PUBLIC_LOGIN_URL
+  - NEXT_PUBLIC_SUPPORT_EMAIL
+- La landing se desplego en Vercel
+- El dominio se conecto correctamente
+- Estado actual:
+  - 103finder.shop conectado a Vercel
+  - www.103finder.shop conectado a Vercel
+- Esta landing ya sirve como cara publica del negocio para Stripe y para futura descarga del instalador
+
+Dominio y DNS
+- El dominio esta gestionado en Namecheap
+- Se configuraron los DNS para Vercel:
+  - root del dominio apuntando al valor que indicaba Vercel
+  - www por CNAME a Vercel
+- Se resolvio correctamente la validacion del dominio en Vercel
+- Mas tarde se anadio tambien el subdominio:
+  - api.103finder.shop
+- Ese subdominio se configuro para Railway
+- Se tuvieron que crear registros DNS en Namecheap para Railway:
+  - un CNAME para api
+  - un TXT de verificacion para Railway
+- Tras algunos intentos fallidos de guardado en Namecheap, el DNS acabo quedando bien y Railway lo valido
+
+Stripe: estado conceptual y configuracion
+- Se decidio usar Stripe para suscripciones mensuales
+- El plan es:
+  - producto de suscripcion mensual de 10 EUR
+  - gestion de clientes a traves de Checkout + Customer Portal
+- Se explico que Stripe permite empezar como autonomo y luego migrar a empresa sin rehacer toda la integracion
+- Se aconsejo usar primero Modo prueba
+- Se llego a crear o preparar:
+  - producto en Stripe
+  - precio recurrente mensual
+  - webhook
+- Variables de Stripe necesarias:
+  - STRIPE_SECRET_KEY
+  - STRIPE_PRICE_ID
+  - STRIPE_WEBHOOK_SECRET
+- Se explico donde obtener cada una en el panel de Stripe en castellano:
+  - STRIPE_SECRET_KEY desde Desarrolladores > Claves de API
+  - STRIPE_PRICE_ID desde Catalogo de productos > precio
+  - STRIPE_WEBHOOK_SECRET desde Desarrolladores > Webhooks > endpoint
+- El webhook de Stripe se configuro apuntando a:
+  - https://api.103finder.shop/stripe/webhook
+- El secreto del webhook ya se copio a Railway
+
+Supabase: papel en la arquitectura
+- Supabase ya se usaba en el proyecto original para:
+  - autenticacion
+  - perfiles
+  - acceso
+  - estado de suscripcion
+- Se confirmo revisando el codigo que ya existia logica alrededor de:
+  - user_subscriptions
+  - subscription_status
+  - stripe_customer_id
+  - stripe_subscription_id
+- El proyecto ya tenia una implementacion previa de control de acceso y suscripcion
+- El objetivo del nuevo backend de billing es sincronizar Stripe con esa tabla de Supabase, sin necesidad de exponer mas partes del backend general
+
+Backend original vs backend minimo de billing
+- Se aclaro una distincion importante:
+  - el backend original de la app no se quiere exponer entero
+  - pero Stripe si necesita un backend publico para webhooks y creacion de sesiones
+- Por eso se decidio crear una billing API minima
+- Esta decision es central para entender la arquitectura futura del proyecto
+
+Billing API minima (billing-api)
+Objetivo
+- Crear un backend publico y minimo que solo gestione:
+  - autenticacion del usuario via token de Supabase
+  - creacion de sesion de Stripe Checkout
+  - creacion de sesion de Customer Portal
+  - recepcion de webhooks de Stripe
+  - sincronizacion del estado de suscripcion en Supabase
+
+Contenido actual de billing-api
+- Se creo un proyecto independiente en la carpeta billing-api
+- Incluye:
+  - main.py
+  - requirements.txt
+  - .env.example
+  - README.md
+  - .gitignore
+- Endpoints implementados:
+  - GET /health
+  - POST /billing/create-checkout-session
+  - POST /billing/create-portal-session
+  - POST /stripe/webhook
+- Este backend:
+  - no expone logica de busqueda
+  - no usa la parte amplia de Discogs
+  - solo habla con Stripe y Supabase
+- Se verifico sintacticamente con:
+  - python -m py_compile main.py
+
+Despliegue de billing-api
+- Se preparo como repo independiente
+- Se inicializo git dentro de billing-api
+- Hubo una confusion inicial al subirlo porque se estaba operando en la carpeta public-landing
+- Despues se corrigio y se subio al repo correcto:
+  - 103finder-billing-api
+- Se desplego en Railway
+- Railway genero primero un dominio propio del servicio
+- Despues se conecto el custom domain:
+  - api.103finder.shop
+- Estado actual confirmado:
+  - https://api.103finder.shop/health responde correctamente con {"ok":true}
+
+Configuracion de Railway
+- Dentro de Railway se anadieron variables de entorno para el backend de billing
+- Variables necesarias:
+  - APP_BASE_URL
+  - ALLOWED_ORIGINS
+  - SUPABASE_URL
+  - SUPABASE_ANON_KEY
+  - SUPABASE_SERVICE_ROLE_KEY
+  - STRIPE_SECRET_KEY
+  - STRIPE_PRICE_ID
+  - STRIPE_WEBHOOK_SECRET
+- Se configuro el start command con Uvicorn en Railway
+- La API responde, lo que indica que:
+  - despliegue correcto
+  - puerto mapeado correctamente
+  - networking publico funcionando
+
+Frontend principal (web/frontend) y cambio de arquitectura
+- El frontend principal sigue siendo la app real del usuario
+- Se detecto un problema importante:
+  - el frontend original usaba NEXT_PUBLIC_API_URL tanto para busqueda como para billing
+- Como ahora existe una billing API separada, eso habia que corregirlo
+- Se modifico:
+  - web/frontend/lib/billing/api.ts
+- Nueva logica:
+  - primero usa NEXT_PUBLIC_BILLING_API_URL
+  - luego fallback a NEXT_PUBLIC_API_URL
+  - fallback final local
+- Tambien se anadio en web/frontend/.env.local:
+  - NEXT_PUBLIC_BILLING_API_URL=https://api.103finder.shop
+- Ademas se actualizo la documentacion del frontend para explicar esta separacion
+
+Problemas de frontend y puertos
+- El frontend local tuvo varios problemas con procesos viejos de Next.js
+- En distintos momentos paso esto:
+  - puerto 3000 ocupado
+  - Next arrancando en 3001
+  - lock de .next/dev/lock
+- Se detuvieron procesos viejos manualmente varias veces
+- Se relanzo el frontend varias veces hasta conseguir que arrancase limpio en 3000
+- Aun asi, en otros momentos volvio a arrancar en 3001 cuando seguia habiendo residuos de procesos anteriores
+
+Prueba del flujo de suscripcion y problema pendiente
+Objetivo de la prueba
+- Probar el flujo completo:
+  - usuario autenticado en la app
+  - clic en Suscribirme por 10 EUR/mes
+  - creacion de Checkout Session
+  - redireccion a Stripe Checkout
+  - retorno
+  - webhook
+  - actualizacion de user_subscriptions en Supabase
+
+Estado actual de esa prueba
+- Al pulsar Suscribirme por 10 EUR/mes desde la app local, aparece:
+  - failed to fetch
+- Para facilitar el diagnostico, se modifico web/frontend/lib/billing/api.ts
+- Ahora, en lugar de fallar silenciosamente, si no se puede conectar con la Billing API se muestra un mensaje mas explicito:
+  - No se pudo conectar con Billing API en ...
+- Aun con eso, el flujo todavia no quedo resuelto completamente durante esta conversacion
+
+Comprobaciones realizadas sobre el problema de billing
+- Se verifico que:
+  - https://api.103finder.shop/health responde correctamente
+- Se comprobo tambien la preflight CORS desde http://localhost:3000
+- Resultado:
+  - el endpoint de billing respondia correctamente al preflight
+  - devolvia access-control-allow-origin: http://localhost:3000
+- Eso sugiere que el problema no era, al menos inicialmente, un fallo simple de CORS global
+- Tambien se comprobo manualmente que si se hace POST sin token a:
+  - https://api.103finder.shop/billing/create-checkout-session
+  - la API responde 401 correctamente con:
+    - Falta Authorization Bearer token.
+- Eso demuestra que la billing API esta viva y que el endpoint responde
+- El problema restante parece estar en:
+  - la llamada real desde el frontend
+  - el origen exacto
+  - la sesion de Supabase en navegador
+  - o un detalle especifico del fetch desde la UI
+
+Configuracion legal y comercial
+- Se hablo de la necesidad de tener una web publica minima para Stripe
+- Ya existe una landing publica suficiente como base
+- Se recomendo que esa web publica sirva tambien como futura pagina de descarga
+- Las paginas legales minimas ya estan creadas, aunque se dejo claro que luego conviene completarlas con datos reales antes de produccion
+
+Desktop / Tauri
+- Se consiguio arrancar la app desktop en modo dev
+- Se creo un acceso directo de desarrollo en el escritorio
+- Se explico claramente que:
+  - ese acceso directo no sirve como experiencia final de usuario
+  - la version final para clientes debera venir de una build de Tauri
+- Queda pendiente mas adelante:
+  - empaquetar build final
+  - ofrecer descarga desde la landing
+  - sustituir enlace provisional de descarga por el instalador real
+
+Repositorios/proyectos separados que existen ahora
+1. Proyecto principal original
+- PROJECT_3_4
+- contiene:
+  - web/frontend
+  - api
+  - core
+  - supabase
+  - src-tauri dentro del frontend
+
+2. Landing publica
+- public-landing
+- repo separado
+- desplegada en Vercel
+- conectada a 103finder.shop / www.103finder.shop
+
+3. Billing API
+- billing-api
+- repo separado
+- desplegada en Railway
+- conectada a api.103finder.shop
+
+Variables y configuraciones clave ya utilizadas
+Landing publica / Vercel
+- NEXT_PUBLIC_APP_DOWNLOAD_URL
+- NEXT_PUBLIC_LOGIN_URL
+- NEXT_PUBLIC_SUPPORT_EMAIL
+
+Frontend principal
+- NEXT_PUBLIC_SUPABASE_URL
+- NEXT_PUBLIC_SUPABASE_ANON_KEY
+- NEXT_PUBLIC_API_URL
+- NEXT_PUBLIC_BILLING_API_URL
+
+Billing API / Railway
+- APP_BASE_URL
+- ALLOWED_ORIGINS
+- SUPABASE_URL
+- SUPABASE_ANON_KEY
+- SUPABASE_SERVICE_ROLE_KEY
+- STRIPE_SECRET_KEY
+- STRIPE_PRICE_ID
+- STRIPE_WEBHOOK_SECRET
+
+Situacion exacta al terminar esta conversacion
+- Dominio publico de la landing funcionando
+- Landing publica desplegada y conectada
+- Billing API desplegada y funcionando publicamente
+- Webhook de Stripe configurado y secreto en Railway
+- Frontend preparado para usar una billing API separada
+- Problema pendiente:
+  - el boton de suscripcion desde el frontend local aun falla
+- Se reinicio el frontend varias veces por conflictos de puertos y procesos huerfanos
+- El siguiente paso natural al retomar es diagnosticar definitivamente ese failed to fetch / error de billing desde la app local o mover la prueba a un entorno frontend publicado
+
+Que conviene hacer al retomar el proyecto
+1. Comprobar el puerto real del frontend local
+- confirmar si esta en 3000 o 3001
+- cerrar procesos viejos de Next si hace falta
+
+2. Probar desde /billing
+- entrar con un usuario real autenticado
+- pulsar Suscribirme por 10 EUR/mes
+- observar el mensaje exacto en pantalla
+
+3. Revisar consola del navegador
+- mirar errores de red
+- mirar respuesta del fetch
+- mirar si la sesion de Supabase se esta obteniendo correctamente
+
+4. Revisar Railway logs
+- confirmar si la peticion llega al servicio
+- ver si hay error en auth o payload
+
+5. Confirmar APP_BASE_URL
+- si la prueba se hace en local, quiza temporalmente convenga usar http://localhost:3000
+- si la prueba se hace en entorno publicado, usar https://www.103finder.shop
+
+6. Una vez funcione el checkout
+- comprobar Stripe Checkout
+- verificar que el webhook entra
+- verificar actualizacion en user_subscriptions de Supabase
+
+7. Mas adelante
+- publicar la app principal o al menos su parte de billing accesible externamente si fuera necesario
+- generar build final de Tauri
+- subir instalador real
+- conectar NEXT_PUBLIC_APP_DOWNLOAD_URL a la descarga final
+- preparar lanzamiento comercial mas serio
+
+Resumen de intencion del proyecto
+- 103 FINDER no es una simple landing ni solo una web de login
+- es una herramienta de escritorio basada en busqueda avanzada en Discogs
+- la estrategia tecnica decidida ha sido separar:
+  - la web publica del negocio
+  - la app principal
+  - la API minima de cobro
+- el objetivo final es tener:
+  - landing publica en dominio propio
+  - pagos por Stripe funcionando
+  - backend de billing minimo y seguro
+  - app desktop descargable
+  - logica principal protegida y no expuesta innecesariamente

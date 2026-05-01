@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import SearchClient from "./SearchClient";
 import { isTauriRuntime } from "@/lib/desktop/runtime";
+import { appRoutes } from "@/lib/routes";
 
 function SearchPageContent() {
   const [isDesktop, setIsDesktop] = useState<boolean | null>(null);
@@ -42,13 +43,13 @@ function SearchPageContent() {
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
-                href="/settings"
+                href={appRoutes.settings}
                 className="rounded-2xl bg-cyan-400 px-5 py-3 text-sm font-semibold text-black transition hover:brightness-110"
               >
                 Ir a perfil
               </Link>
               <Link
-                href="/"
+                href={appRoutes.home}
                 className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08]"
               >
                 Volver al inicio

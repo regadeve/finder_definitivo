@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Discogs Finder",
-  "version": "0.1.0",
-  "identifier": "com.discogsfinder.desktop",
+  "productName": "103 Finder",
+  "version": "0.1.5",
+  "identifier": "shop.103finder.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:3000",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Discogs Finder",
+        "title": "103 Finder",
         "width": 1440,
         "height": 960,
         "minWidth": 1200,
@@ -26,9 +26,21 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/icon.ico"
     ],
     "targets": "all"
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFCMjEzNDZDRkE3MzRGRTgKUldUb1QzUDZiRFFoRzlVRGZqQXBENFIyOG95K2dXR053WUV3cWxiQkhHdmJ0TVlzeWFSaHZkS0kK",
+      "endpoints": [
+        "https://103finder.shop/updates/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

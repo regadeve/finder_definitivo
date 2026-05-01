@@ -1,6 +1,7 @@
 import Link from "next/link";
+import { appRoutes } from "@/lib/routes";
 
-const downloadUrl = process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL?.trim() || "#download";
+const downloadUrl = process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL?.trim() || "/downloads/103-Finder-Windows-x64-Setup.exe";
 
 const pillars = [
   {
@@ -38,7 +39,7 @@ export default function HomePage() {
             <nav className="flex flex-wrap items-center gap-3 text-sm text-slate-200">
               <a href="#proyecto" className="rounded-full border border-white/10 px-4 py-2 transition hover:border-amber-300/40 hover:bg-white/5">Proyecto</a>
               <a href="#descarga" className="rounded-full border border-white/10 px-4 py-2 transition hover:border-emerald-300/40 hover:bg-white/5">Descarga</a>
-              <Link href="/login" className="rounded-full bg-white px-5 py-2.5 font-semibold text-slate-950 transition hover:brightness-95">
+              <Link href={appRoutes.login} className="rounded-full bg-white px-5 py-2.5 font-semibold text-slate-950 transition hover:brightness-95">
                 Acceder
               </Link>
             </nav>
@@ -60,12 +61,13 @@ export default function HomePage() {
               <div className="mt-8 flex flex-wrap gap-3">
                 <a
                   href={downloadUrl}
+                  download
                   className="rounded-full bg-emerald-400 px-6 py-3 text-sm font-semibold text-slate-950 transition hover:brightness-95"
                 >
                   Descargar para Windows
                 </a>
                 <Link
-                  href="/login"
+                  href={appRoutes.login}
                   className="rounded-full border border-white/14 bg-white/6 px-6 py-3 text-sm font-semibold text-white transition hover:bg-white/10"
                 >
                   Entrar o crear cuenta
@@ -94,7 +96,7 @@ export default function HomePage() {
                   ))}
                 </div>
                 <div className="mt-6 rounded-3xl border border-emerald-300/20 bg-emerald-300/10 px-5 py-4 text-sm leading-6 text-emerald-50">
-                  La descarga publica se controla con <code className="rounded bg-black/20 px-1.5 py-0.5 text-[12px]">NEXT_PUBLIC_APP_DOWNLOAD_URL</code> para poder cambiar el instalador sin tocar la pagina.
+                  La descarga publica apunta por defecto al instalador alojado en esta web y puede sobrescribirse con <code className="rounded bg-black/20 px-1.5 py-0.5 text-[12px]">NEXT_PUBLIC_APP_DOWNLOAD_URL</code> si mas adelante cambias el archivo.
                 </div>
               </div>
             </div>
@@ -152,13 +154,14 @@ export default function HomePage() {
               </div>
               <a
                 href={downloadUrl}
+                download
                 className="mt-5 flex w-full items-center justify-center rounded-2xl bg-white px-5 py-4 text-sm font-semibold text-slate-950 transition hover:brightness-95"
               >
                 Descargar instalador
               </a>
               <p className="mt-4 text-sm leading-6 text-slate-400">
-                Si aun no has definido el archivo publico, configura <code className="rounded bg-white/8 px-1.5 py-0.5 text-[12px]">NEXT_PUBLIC_APP_DOWNLOAD_URL</code>
-                con el enlace real del instalador.
+                Si en algun momento mueves el instalador a otra URL, configura <code className="rounded bg-white/8 px-1.5 py-0.5 text-[12px]">NEXT_PUBLIC_APP_DOWNLOAD_URL</code>
+                con el nuevo enlace publico.
               </p>
             </div>
           </div>

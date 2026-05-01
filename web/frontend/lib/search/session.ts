@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { toErrorMessage } from "@/lib/desktop/errors";
 import { reportYearlessReleaseHit } from "@/lib/supabase/yearless-releases";
 import { insertUserSearch, updateUserSearch } from "@/lib/supabase/user-searches";
-import { startSearchStream, type SearchCard, type SearchFiltersPayload } from "@/lib/discogs/search-stream";
+import { startSearchStream, type SearchBackend, type SearchCard, type SearchFiltersPayload } from "@/lib/discogs/search-stream";
 
 type SearchSessionState = {
   filters: SearchFiltersPayload;
@@ -77,6 +78,10 @@ export function setSearchSessionFilters(filters: SearchFiltersPayload) {
   patchState({ filters });
 }
 
+export function setSearchSessionStatus(status: string) {
+  patchState({ status });
+}
+
 export async function stopSearchSession(supabase: SupabaseClient) {
   abortController?.abort();
   abortController = null;
@@ -89,7 +94,12 @@ export async function stopSearchSession(supabase: SupabaseClient) {
   }
 }
 
-export async function startSearchSession(supabase: SupabaseClient, userId: string, filters: SearchFiltersPayload) {
+export async function startSearchSession(
+  supabase: SupabaseClient,
+  userId: string,
+  filters: SearchFiltersPayload,
+  backend: SearchBackend = "discogs-live"
+) {
   abortController?.abort();
   abortController = new AbortController();
   reportedYearlessUris = new Set();
@@ -97,7 +107,7 @@ export async function startSearchSession(supabase: SupabaseClient, userId: strin
   patchState({
     filters,
     running: true,
-    status: "Conectando con Discogs...",
+    status: backend === "catalog-local" ? "Conectando con discogs_catalog..." : "Conectando con Discogs...",
     processedCount: 0,
     foundCount: 0,
     pageInfo: { page: 0, total: 0 },
@@ -115,13 +125,29 @@ export async function startSearchSession(supabase: SupabaseClient, userId: strin
     await startSearchStream({
       userId,
       filters,
+      backend,
       signal: abortController.signal,
       onStatus: (payload) => {
+        const current = getSearchSessionState();
+        const nextPage = payload.page ?? current.pageInfo.page;
+        const nextTotalPages = payload.total_pages ?? current.pageInfo.total;
+        const nextFound = payload.found ?? current.foundCount;
+        const nextProcessed = payload.processed ?? current.processedCount;
+        const hasProgressUpdate =
+          payload.page !== undefined
+          || payload.total_pages !== undefined
+          || payload.processed !== undefined
+          || payload.found !== undefined;
+        const nextStatus = payload.message
+          ?? (hasProgressUpdate
+            ? `Pagina ${nextPage}/${nextTotalPages} · procesados ${nextProcessed} · encontrados ${nextFound}`
+            : current.status);
+
         patchState({
-          pageInfo: { page: payload.page ?? 0, total: payload.total_pages ?? 0 },
-          foundCount: payload.found ?? 0,
-          processedCount: payload.processed ?? 0,
-          status: `Pagina ${payload.page}/${payload.total_pages} · procesados ${payload.processed} · encontrados ${payload.found}`,
+          pageInfo: { page: nextPage, total: nextTotalPages },
+          foundCount: nextFound,
+          processedCount: nextProcessed,
+          status: nextStatus,
         });
       },
       onItem: (payload) => {
@@ -152,9 +178,12 @@ export async function startSearchSession(supabase: SupabaseClient, userId: strin
         }
       },
     });
-  } catch {
+  } catch (error) {
     if (!abortController?.signal.aborted) {
-      patchState({ running: false, status: "Error de conexion con Discogs." });
+      patchState({
+        running: false,
+        status: toErrorMessage(error, "Error de conexion con Discogs."),
+      });
       if (searchHistoryId) {
         void updateUserSearch(supabase, searchHistoryId, { status: "failed", result_count: getSearchSessionState().foundCount }).catch(() => undefined);
         searchHistoryId = null;

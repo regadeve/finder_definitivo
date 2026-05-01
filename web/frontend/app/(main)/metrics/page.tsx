@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import MetricsDashboard from "./MetricsDashboard";
 import { createClient } from "@/lib/supabase/client";
+import { appRoutes } from "@/lib/routes";
 import { getCurrentUserProfile } from "@/lib/supabase/profile";
 import { fetchYearlessReleaseHits, type YearlessReleaseHit } from "@/lib/supabase/yearless-releases";
 import { navigateWithTransition } from "@/lib/view-transition";
@@ -122,7 +123,7 @@ export default function MetricsPage() {
 
       if (!active) return;
       if (!user) {
-        navigateWithTransition(router, "/", "replace");
+        navigateWithTransition(router, appRoutes.home, "replace");
         return;
       }
 
@@ -131,7 +132,7 @@ export default function MetricsPage() {
         if (!active) return;
 
         if (!profile?.is_admin) {
-          navigateWithTransition(router, "/search", "replace");
+          navigateWithTransition(router, appRoutes.search, "replace");
           return;
         }
 
@@ -201,8 +202,8 @@ export default function MetricsPage() {
             <div className={panel("p-5 md:p-6")}>
               <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">Accesos</p>
               <div className="mt-4 flex flex-wrap gap-3">
-                <a href="/search" className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-white/[0.08]">Volver al Finder</a>
-                <a href="/settings" className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm font-medium text-cyan-100 transition hover:bg-cyan-400/20">Perfil y ajustes</a>
+                <a href={appRoutes.search} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-white/[0.08]">Volver al Finder</a>
+                <a href={appRoutes.settings} className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3 text-sm font-medium text-cyan-100 transition hover:bg-cyan-400/20">Perfil y ajustes</a>
               </div>
               <p className="mt-4 text-sm leading-6 text-zinc-400">Si alguna sección falla, revisa las nuevas políticas admin y la migración de releases sin año en Supabase.</p>
             </div>

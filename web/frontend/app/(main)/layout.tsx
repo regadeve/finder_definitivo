@@ -1,10 +1,9 @@
 "use client";
-
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { fetchUserAccessStatus } from "@/lib/supabase/access";
+import { appRoutes } from "@/lib/routes";
 import { navigateWithTransition } from "@/lib/view-transition";
 import Image from "next/image";
 
@@ -16,6 +15,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   const [avatar, setAvatar] = useState<string | null>(null);
   const [initials, setInitials] = useState("?");
   const [checkingAccess, setCheckingAccess] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -36,15 +36,17 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         const access = await fetchUserAccessStatus(supabase, session.user.id);
         if (!active) return;
 
+        setIsAdmin(access.isAdmin);
+
         if (!access.canUseApp) {
-          navigateWithTransition(router, "/billing", "replace");
+          navigateWithTransition(router, appRoutes.billing, "replace");
           return;
         }
 
         setCheckingAccess(false);
       } catch {
         if (active) {
-          router.replace("/billing");
+          router.replace(appRoutes.billing);
         }
       }
     })();
@@ -87,13 +89,16 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     };
   }, [supabase]);
 
-  const navItems = [
-    { label: "Finder", href: "/search", icon: "🔍" },
-    { label: "Favoritos", href: "/favorites", icon: "⭐" },
-    { label: "Escuchados", href: "/listened", icon: "🎧" },
-    { label: "Métricas", href: "/metrics", icon: "📊" },
-    { label: "Mi perfil", href: "/settings", icon: "👤" },
+  const navItems: Array<{ label: string; href: string; icon: string }> = [
+    { label: "Finder", href: appRoutes.search, icon: "🔍" },
+    { label: "Favoritos", href: appRoutes.favorites, icon: "⭐" },
+    { label: "Escuchados", href: appRoutes.listened, icon: "🎧" },
+    { label: "Mi perfil", href: appRoutes.settings, icon: "👤" },
   ];
+
+  if (isAdmin) {
+    navItems.splice(3, 0, { label: "Métricas", href: appRoutes.metrics, icon: "📊" });
+  }
 
   if (checkingAccess) {
     return <div className="flex h-screen w-full items-center justify-center bg-[#050816] text-zinc-400">Comprobando acceso...</div>;
@@ -112,9 +117,10 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             {navItems.map((item) => {
               const active = pathname.startsWith(item.href);
               return (
-                <Link
+                <button
                   key={item.href}
-                  href={item.href}
+                  type="button"
+                  onClick={() => navigateWithTransition(router, item.href)}
                   title={item.label}
                   className={`flex h-12 w-12 items-center justify-center rounded-2xl text-xl transition-all ${
                     active 
@@ -123,14 +129,15 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
                   }`}
                 >
                   {item.icon}
-                </Link>
+                </button>
               );
             })}
           </div>
         </div>
 
-        <Link 
-          href="/settings" 
+        <button 
+          type="button"
+          onClick={() => navigateWithTransition(router, appRoutes.settings)}
           title="Perfil y Ajustes"
           className="group flex flex-col items-center gap-2 rounded-3xl border border-white/10 bg-white/5 px-2 py-3 transition hover:border-cyan-400/40 hover:bg-white/[0.08]"
         >
@@ -142,7 +149,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
             )}
           </div>
           <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-zinc-400 group-hover:text-cyan-300">Mi perfil</span>
-        </Link>
+        </button>
       </nav>
 
       {/* Main Content Area */}

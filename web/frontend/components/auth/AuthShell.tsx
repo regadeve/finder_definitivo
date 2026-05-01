@@ -4,6 +4,8 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { fetchUserAccessStatus } from "@/lib/supabase/access";
+import { getBillingApiAvailability } from "@/lib/billing/api";
+import { appRoutes, normalizeAppPath } from "@/lib/routes";
 import { navigateWithTransition } from "@/lib/view-transition";
 
 type AuthMode = "login" | "signup";
@@ -13,11 +15,25 @@ type Notice = {
   text: string;
 };
 
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function toAuthNotice(message: string) {
+  const normalized = message.trim().toLowerCase();
+
+  if (normalized.includes("invalid login credentials") || normalized.includes("invalid credentials")) {
+    return "Email o contrasena incorrectos. Prueba con el email en minusculas y revisa que la contrasena sea exacta.";
+  }
+
+  return message;
+}
+
 function AuthShellContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
-  const redirectTo = searchParams.get("redirectTo") || "/search";
+  const redirectTo = normalizeAppPath(searchParams.get("redirectTo") || appRoutes.search);
 
   const [mode, setMode] = useState<AuthMode>("login");
   const [checkingSession, setCheckingSession] = useState(true);
@@ -30,7 +46,7 @@ function AuthShellContent() {
 
   async function resolveDestination(userId: string) {
     const access = await fetchUserAccessStatus(supabase, userId);
-    return access.canUseApp ? redirectTo : "/billing";
+    return access.canUseApp ? redirectTo : appRoutes.billing;
   }
 
   useEffect(() => {
@@ -75,18 +91,19 @@ function AuthShellContent() {
     setLoading(true);
     setNotice(null);
 
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const normalizedEmail = normalizeEmail(email);
+    const { error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
 
     setLoading(false);
 
     if (error) {
-      setNotice({ kind: "error", text: error.message });
+      setNotice({ kind: "error", text: toAuthNotice(error.message) });
       return;
     }
 
     const { data } = await supabase.auth.getSession();
     const userId = data.session?.user.id;
-    const nextPath = userId ? await resolveDestination(userId) : "/billing";
+    const nextPath = userId ? await resolveDestination(userId) : appRoutes.billing;
 
     setNotice({ kind: "success", text: "Sesion iniciada. Redirigiendo..." });
     navigateWithTransition(router, nextPath, "replace");
@@ -97,7 +114,7 @@ function AuthShellContent() {
     setLoading(true);
     setNotice(null);
 
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = normalizeEmail(email);
     const cleanedName = name.trim();
 
     const { data, error } = await supabase.auth.signUp({
@@ -118,9 +135,21 @@ function AuthShellContent() {
 
     if (data.user && data.session) {
       await createProfile(data.user.id, normalizedEmail, cleanedName);
+      const billingApi = await getBillingApiAvailability();
       setLoading(false);
+
+      if (!billingApi.ok) {
+        setNotice({
+          kind: "success",
+          text: `Cuenta creada correctamente. El servidor de pagos no responde ahora mismo (${billingApi.baseUrl}), pero tu usuario ya existe y podras suscribirte mas tarde.`,
+        });
+        setMode("login");
+        setPassword("");
+        return;
+      }
+
       setNotice({ kind: "success", text: "Cuenta creada correctamente. Entrando..." });
-      navigateWithTransition(router, "/billing", "replace");
+      navigateWithTransition(router, appRoutes.billing, "replace");
       return;
     }
 
@@ -189,7 +218,7 @@ function AuthShellContent() {
                     onClick={async () => {
                       const { data } = await supabase.auth.getSession();
                       const userId = data.session?.user.id;
-                      const nextPath = userId ? await resolveDestination(userId) : "/billing";
+                      const nextPath = userId ? await resolveDestination(userId) : appRoutes.billing;
                       navigateWithTransition(router, nextPath);
                     }}
                     className="rounded-full bg-cyan-400 px-4 py-2 font-medium text-black"

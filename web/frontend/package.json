@@ -1,6 +1,6 @@
 {
   "name": "frontend",
-  "version": "0.1.0",
+  "version": "0.1.5",
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "eslint",
     "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build"
+    "desktop:build": "tauri build",
+    "desktop:publish-updater": "node scripts/publish-updater.mjs",
+    "desktop:release": "node scripts/release-desktop.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",

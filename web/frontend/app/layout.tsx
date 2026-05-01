@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import NavProgress from "@/components/NavProgress";
+import { DesktopUpdateNotice } from "@/components/desktop-update-notice";
 import UserPresenceHeartbeat from "@/components/UserPresenceHeartbeat";
 import "./globals.css";
 
@@ -28,6 +29,7 @@ export default function RootLayout({
           <NavProgress />
         </Suspense>
         <UserPresenceHeartbeat />
+        <DesktopUpdateNotice />
         {children}
       </body>
     </html>

@@ -2,11 +2,14 @@
 
 import { useEffect, useState, useRef, useMemo } from "react";
 import Image from "next/image";
+import { deleteCatalogDsn, loadCatalogDsn, saveCatalogDsn } from "@/lib/desktop/catalog-config";
 import { deleteDiscogsToken, loadDiscogsToken, saveDiscogsToken } from "@/lib/desktop/discogs-token";
 import { toErrorMessage } from "@/lib/desktop/errors";
 import { isTauriRuntime } from "@/lib/desktop/runtime";
+import { checkAppUpdate, installAppUpdate, type AppUpdateState } from "@/lib/desktop/updater";
 import { fetchAdminAccessUsers, fetchUserAccessStatus, setUserBypassAccess, type AdminAccessUser, type UserAccessStatus } from "@/lib/supabase/access";
 import { createClient } from "@/lib/supabase/client";
+import { appRoutes } from "@/lib/routes";
 import { deleteUserSearch, fetchUserSearches, type UserSearchRow } from "@/lib/supabase/user-searches";
 import { navigateWithTransition } from "@/lib/view-transition";
 import { useRouter } from "next/navigation";
@@ -27,6 +30,10 @@ export default function SettingsPage() {
   const [token, setToken] = useState("");
   const [hasStoredToken, setHasStoredToken] = useState(false);
   const [tokenNotice, setTokenNotice] = useState<{kind: "error"|"success"|"info", text: string} | null>(null);
+  const [catalogDsn, setCatalogDsn] = useState("");
+  const [savingCatalog, setSavingCatalog] = useState(false);
+  const [hasCatalogDsn, setHasCatalogDsn] = useState(false);
+  const [catalogNotice, setCatalogNotice] = useState<{kind: "error"|"success"|"info", text: string} | null>(null);
 
   // Profile State
   const [userId, setUserId] = useState<string | null>(null);
@@ -41,7 +48,12 @@ export default function SettingsPage() {
   const [adminUsers, setAdminUsers] = useState<AdminAccessUser[]>([]);
   const [adminAccessError, setAdminAccessError] = useState("");
   const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
+  const [updateState, setUpdateState] = useState<AppUpdateState | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [installingUpdate, setInstallingUpdate] = useState(false);
+  const [updateNotice, setUpdateNotice] = useState<{ kind: "error" | "success" | "info"; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const catalogApiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
   function formatDateTime(value: string) {
     const date = new Date(value);
@@ -63,6 +75,14 @@ export default function SettingsPage() {
     return "En curso";
   }
 
+  function updateHeadline(state: AppUpdateState) {
+    if (!state.available) {
+      return "Sin updates pendientes";
+    }
+
+    return state.required ? "Actualizacion obligatoria" : "Actualizacion opcional";
+  }
+
   useEffect(() => {
     let active = true;
 
@@ -70,7 +90,7 @@ export default function SettingsPage() {
       // 1. Check Auth & Profile
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        if (active) router.replace("/");
+        if (active) router.replace(appRoutes.home);
         return;
       }
       
@@ -134,6 +154,14 @@ export default function SettingsPage() {
           if (active) {
             setToken(state.token);
             setHasStoredToken(state.hasToken);
+          }
+        } catch (error) {}
+
+        try {
+          const dsn = await loadCatalogDsn();
+          if (active) {
+            setCatalogDsn(dsn);
+            setHasCatalogDsn(dsn.trim().length > 0);
           }
         } catch (error) {}
       }
@@ -246,17 +274,55 @@ export default function SettingsPage() {
       setSavingToken(false);
     }
   }
+
+  async function onSaveCatalog(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setCatalogNotice(null);
+
+    if (!isDesktop) {
+      setCatalogNotice({ kind: "info", text: "La conexion local del catalogo solo funciona en Desktop." });
+      return;
+    }
+
+    setSavingCatalog(true);
+    try {
+      await saveCatalogDsn(catalogDsn);
+      setHasCatalogDsn(catalogDsn.trim().length > 0);
+      setCatalogNotice({ kind: "success", text: "Conexion local del catalogo guardada en el llavero seguro." });
+    } catch (error) {
+      setCatalogNotice({ kind: "error", text: toErrorMessage(error, "No se pudo guardar la conexion local del catalogo.") });
+    } finally {
+      setSavingCatalog(false);
+    }
+  }
+
+  async function onDeleteCatalog() {
+    setCatalogNotice(null);
+    if (!isDesktop) return;
+
+    setSavingCatalog(true);
+    try {
+      await deleteCatalogDsn();
+      setCatalogDsn("");
+      setHasCatalogDsn(false);
+      setCatalogNotice({ kind: "success", text: "Conexion local del catalogo eliminada del sistema." });
+    } catch (error) {
+      setCatalogNotice({ kind: "error", text: toErrorMessage(error, "No se pudo borrar la conexion local del catalogo.") });
+    } finally {
+      setSavingCatalog(false);
+    }
+  }
   
   async function logout() {
     await supabase.auth.signOut();
-    router.replace("/");
+    router.replace(appRoutes.home);
   }
 
   function reuseSearch(search: UserSearchRow) {
     const params = new URLSearchParams({
       savedFilters: JSON.stringify(search.filters),
     });
-    navigateWithTransition(router, `/search?${params.toString()}`);
+    navigateWithTransition(router, `${appRoutes.search}?${params.toString()}`);
   }
 
   async function removeSearch(searchId: number) {
@@ -293,6 +359,42 @@ export default function SettingsPage() {
     return "Suscripcion requerida";
   }
 
+  async function onCheckForUpdates() {
+    setCheckingUpdate(true);
+    setUpdateNotice(null);
+
+    try {
+      const update = await checkAppUpdate();
+      setUpdateState(update);
+
+      if (!update.configured) {
+        setUpdateNotice({ kind: "info", text: update.message || "El actualizador no esta configurado en este build." });
+      } else if (update.available) {
+        setUpdateNotice({ kind: update.required ? "error" : "success", text: update.message || (update.required ? `Hay una actualizacion obligatoria disponible: ${update.version}.` : `Hay una nueva version disponible: ${update.version}.`) });
+      } else {
+        setUpdateNotice({ kind: "info", text: update.message || "Ya tienes la ultima version disponible." });
+      }
+    } catch (error) {
+      setUpdateNotice({ kind: "error", text: toErrorMessage(error, "No se pudo comprobar si hay actualizaciones.") });
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }
+
+  async function onInstallUpdate() {
+    setInstallingUpdate(true);
+    setUpdateNotice(null);
+
+    try {
+      await installAppUpdate();
+      setUpdateNotice({ kind: "success", text: "La actualizacion se esta instalando. En Windows la app se cerrara para completarla." });
+    } catch (error) {
+      setUpdateNotice({ kind: "error", text: toErrorMessage(error, "No se pudo instalar la actualizacion.") });
+    } finally {
+      setInstallingUpdate(false);
+    }
+  }
+
   if (loading) return <div className="p-10 text-zinc-400">Cargando perfil...</div>;
 
   return (
@@ -315,6 +417,90 @@ export default function SettingsPage() {
               <p className="mt-1 text-lg font-semibold text-white">{accessLabel()}</p>
             </div>
           </div>
+        </section>
+
+        <section className={panel("p-6")}>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-2xl">
+              <h2 className="text-xl font-bold text-white">Actualizaciones de escritorio</h2>
+              <p className="mt-2 text-sm text-zinc-400">Comprueba si hay una nueva version de 103 Finder y lanzala desde aqui. Cuando exista una update obligatoria, la app quedara bloqueada hasta instalarla.</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-right">
+              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Version actual</p>
+              <p className="mt-1 text-lg font-semibold text-white">{updateState?.currentVersion ?? "-"}</p>
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => void onCheckForUpdates()}
+              disabled={!isDesktop || checkingUpdate || installingUpdate}
+              className="rounded-2xl bg-[linear-gradient(135deg,#34d399,#10b981)] px-5 py-3 text-sm font-semibold text-slate-950 transition hover:brightness-105 disabled:opacity-50"
+            >
+              {checkingUpdate ? "Buscando..." : "Buscar actualizaciones"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void onInstallUpdate()}
+              disabled={!isDesktop || installingUpdate || !updateState?.available}
+              className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10 disabled:opacity-50"
+            >
+              {installingUpdate ? "Instalando..." : "Instalar update"}
+            </button>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Instalada</p>
+              <p className="mt-2 text-lg font-semibold text-white">{updateState?.currentVersion ?? "-"}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Detectada</p>
+              <p className="mt-2 text-lg font-semibold text-white">{updateState?.version ?? "-"}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Minimo exigido</p>
+              <p className="mt-2 text-lg font-semibold text-white">{updateState?.minimumVersion ?? "-"}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
+              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Estado</p>
+              <p className="mt-2 text-lg font-semibold text-white">{updateState ? updateHeadline(updateState) : "-"}</p>
+            </div>
+          </div>
+
+          {updateState?.available ? (
+            <div className={`mt-5 rounded-2xl border px-4 py-4 text-sm ${updateState.required ? "border-rose-300/20 bg-rose-300/10 text-rose-50" : "border-emerald-300/20 bg-emerald-300/10 text-emerald-50"}`}>
+              <p className="font-semibold">{updateState.required ? "Actualizacion obligatoria" : "Nueva version disponible"}: {updateState.version}</p>
+              <p className={`mt-2 leading-6 ${updateState.required ? "text-rose-50/90" : "text-emerald-50/90"}`}>
+                {updateState.required
+                  ? `Este build no deberia seguir usandose sin instalar la version ${updateState.version}.`
+                  : `Puedes instalar la version ${updateState.version} cuando quieras desde esta pantalla.`}
+              </p>
+              {updateState.notes ? (
+                <p className={`mt-2 leading-6 ${updateState.required ? "text-rose-50/90" : "text-emerald-50/90"}`}>{updateState.notes}</p>
+              ) : null}
+              {updateState.diagnostic ? (
+                <p className={`mt-2 leading-6 ${updateState.required ? "text-rose-100" : "text-emerald-100"}`}>{updateState.diagnostic}</p>
+              ) : null}
+              {updateState.downloadUrl ? (
+                <p className={`mt-2 break-all text-xs ${updateState.required ? "text-rose-100/80" : "text-emerald-100/80"}`}>Instalador detectado: {updateState.downloadUrl}</p>
+              ) : null}
+              {updateState.manifestUrl ? (
+                <p className={`mt-1 break-all text-xs ${updateState.required ? "text-rose-100/80" : "text-emerald-100/80"}`}>Manifest: {updateState.manifestUrl}</p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {updateNotice ? (
+            <div className={`mt-5 rounded-2xl border px-4 py-3 text-sm ${updateNotice.kind === "error" ? "border-rose-400/20 bg-rose-400/10 text-rose-200" : updateNotice.kind === "success" ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200" : "border-cyan-400/20 bg-cyan-400/10 text-cyan-200"}`}>
+              {updateNotice.text}
+            </div>
+          ) : null}
+
+          {!isDesktop ? (
+            <p className="mt-4 text-sm text-zinc-500">Las actualizaciones integradas solo funcionan dentro de la app de escritorio.</p>
+          ) : null}
         </section>
 
         {/* PROFILE SECTION */}
@@ -385,6 +571,7 @@ export default function SettingsPage() {
 
         {/* DISCOGS TOKEN SECTION */}
          <div className="grid gap-8 xl:grid-cols-[0.95fr_1.05fr] xl:items-start">
+         <div className="space-y-8">
          <section className={panel("p-8 h-full")}>
             <h2 className="text-xl font-bold text-white mb-2">API key de Discogs</h2>
             <p className="text-zinc-400 text-sm mb-6">Puedes cambiar tu token personal cuando quieras para usar otra clave de Discogs.</p>
@@ -418,7 +605,53 @@ export default function SettingsPage() {
              </form>
           </section>
 
-         <section className={panel("p-8 h-full")}>
+          <section className={panel("p-8 h-full")}>
+            <h2 className="text-xl font-bold text-white mb-2">Catalogo PostgreSQL</h2>
+            <p className="text-zinc-400 text-sm mb-6">En desktop, `Catalogo local` y `Catalogo + live` usan primero tu DSN local si esta guardado. Si no existe, hacen fallback a la Catalog API remota.</p>
+
+            <form onSubmit={onSaveCatalog} className="space-y-4 max-w-lg">
+              <label className="block space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">DSN local de PostgreSQL</span>
+                <input
+                  value={catalogDsn}
+                  onChange={(event) => setCatalogDsn(event.target.value)}
+                  type="password"
+                  placeholder="postgresql://discogs_app:password@localhost:5432/discogs_catalog"
+                  className="w-full rounded-2xl border border-white/10 bg-black/50 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400/50 transition"
+                />
+              </label>
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-zinc-300">
+                Estado local: <span className="font-semibold text-white">{hasCatalogDsn ? "Configurado" : "Pendiente"}</span>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-zinc-300">
+                Fallback API: <span className="font-semibold text-white break-all">{catalogApiUrl}</span>
+              </div>
+
+              {catalogNotice ? (
+                <div className={`rounded-xl px-4 py-3 text-sm border ${catalogNotice.kind === "error" ? "border-rose-400/20 bg-rose-400/10 text-rose-200" : catalogNotice.kind === "success" ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-200" : "border-cyan-400/20 bg-cyan-400/10 text-cyan-200"}`}>
+                  {catalogNotice.text}
+                </div>
+              ) : null}
+
+              <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-zinc-300">
+                `Discogs live` sigue usando tu token local. `Catalogo + live` usara el catalogo local si hay DSN guardado; si no, intentara la API remota.
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button type="submit" disabled={!isDesktop || savingCatalog} className="rounded-xl bg-[linear-gradient(135deg,#34d399,#0f766e)] px-6 py-3 text-sm font-semibold text-slate-950 shadow-[0_10px_30px_rgba(16,185,129,0.25)] hover:brightness-110 disabled:opacity-50 transition flex-1">
+                  {savingCatalog ? "Guardando..." : "Guardar conexion local"}
+                </button>
+                <button type="button" onClick={onDeleteCatalog} disabled={!isDesktop || savingCatalog || !hasCatalogDsn} className="rounded-xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-50 transition">
+                  Borrar
+                </button>
+              </div>
+            </form>
+          </section>
+          </div>
+
+          <section className={panel("p-8 h-full")}>
             <div className="flex items-center justify-between gap-4">
               <div>
                 <h2 className="text-xl font-bold text-white mb-2">Busquedas guardadas</h2>
@@ -436,11 +669,23 @@ export default function SettingsPage() {
              </div>
            ) : null}
 
-           <div className="mt-6 space-y-4">
-             {searches.map((search) => {
-               const filters = search.filters;
-               const yearLabel = filters.sin_anyo ? "Sin ano" : `${filters.year_start}-${filters.year_end}`;
-               const priceLabel = filters.precio_maximo > 0 ? `${filters.precio_minimo}€-${filters.precio_maximo}€` : `${filters.precio_minimo}€+`;
+            <div className="mt-6">
+              <details className="group rounded-[28px] border border-white/10 bg-white/[0.04]" open={searches.length <= 3}>
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
+                  <div>
+                    <p className="text-sm font-semibold text-white">Historial de búsquedas</p>
+                    <p className="mt-1 text-xs text-zinc-400">Despliega esta sección para ver, reutilizar o borrar búsquedas guardadas.</p>
+                  </div>
+                  <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-300 transition group-open:rotate-180">
+                    ▼
+                  </span>
+                </summary>
+
+                <div className="space-y-4 border-t border-white/10 px-5 py-5">
+              {searches.map((search) => {
+                const filters = search.filters;
+                const yearLabel = filters.sin_anyo ? "Sin ano" : `${filters.year_start}-${filters.year_end}`;
+                const priceLabel = filters.precio_maximo > 0 ? `${filters.precio_minimo}€-${filters.precio_maximo}€` : `${filters.precio_minimo}€+`;
                const stylesLabel = filters.styles.length ? filters.styles.join(", ") : "Sin estilo";
                const genresLabel = filters.genres.length ? filters.genres.join(", ") : "Sin genero";
 
@@ -485,20 +730,22 @@ export default function SettingsPage() {
                );
              })}
 
-             {!searches.length && !searchesError ? (
-               <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-6 text-center">
-                 <p className="text-sm uppercase tracking-[0.22em] text-zinc-500">Sin busquedas</p>
-                 <p className="mt-3 text-lg font-semibold text-white">Todavia no has guardado ninguna busqueda.</p>
-                 <p className="mt-2 text-sm text-zinc-400">Cuando uses el buscador, los filtros quedaran registrados aqui para tu usuario.</p>
-               </div>
-             ) : null}
-            </div>
-          </section>
+                {!searches.length && !searchesError ? (
+                  <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-6 text-center">
+                    <p className="text-sm uppercase tracking-[0.22em] text-zinc-500">Sin busquedas</p>
+                    <p className="mt-3 text-lg font-semibold text-white">Todavia no has guardado ninguna busqueda.</p>
+                    <p className="mt-2 text-sm text-zinc-400">Cuando uses el buscador, los filtros quedaran registrados aqui para tu usuario.</p>
+                  </div>
+                ) : null}
+                </div>
+              </details>
+             </div>
+           </section>
          </div>
 
-         {accessStatus?.isAdmin ? (
-           <section className={panel("p-8")}>
-             <div className="flex items-center justify-between gap-4">
+          {accessStatus?.isAdmin ? (
+            <section className={panel("p-8")}>
+              <div className="flex items-center justify-between gap-4">
                <div>
                  <h2 className="text-xl font-bold text-white mb-2">Acceso manual para testers</h2>
                  <p className="text-zinc-400 text-sm">Activa o desactiva el bypass de suscripcion para usuarios concretos.</p>
@@ -509,34 +756,48 @@ export default function SettingsPage() {
                </div>
              </div>
 
-             {adminAccessError ? (
-               <div className="mt-6 rounded-xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{adminAccessError}</div>
-             ) : null}
+              {adminAccessError ? (
+                <div className="mt-6 rounded-xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{adminAccessError}</div>
+              ) : null}
 
-             <div className="mt-6 space-y-3">
-               {adminUsers.map((user) => (
-                 <article key={user.id} className="flex flex-wrap items-center justify-between gap-4 rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
-                   <div>
-                     <h3 className="text-sm font-semibold text-white">{user.full_name || user.email}</h3>
-                     <p className="mt-1 text-xs text-zinc-500">{user.email}</p>
-                   </div>
-                   <div className="flex flex-wrap items-center gap-2">
-                     {user.is_admin ? searchBadge("Rol", "Admin") : null}
-                     {user.bypass_subscription ? searchBadge("Bypass", "Si") : searchBadge("Bypass", "No")}
-                     <button
-                       type="button"
-                       onClick={() => void toggleBypass(user)}
-                       disabled={togglingUserId === user.id || user.is_admin}
-                       className="rounded-2xl border border-cyan-300/30 bg-cyan-300/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100 transition hover:bg-cyan-300/30 disabled:opacity-50"
-                     >
-                       {user.is_admin ? "Admin fijo" : togglingUserId === user.id ? "Guardando..." : user.bypass_subscription ? "Quitar bypass" : "Dar bypass"}
-                     </button>
-                   </div>
-                 </article>
-               ))}
-             </div>
-           </section>
-         ) : null}
+              <div className="mt-6">
+                <details className="group rounded-[28px] border border-white/10 bg-white/[0.04]">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
+                    <div>
+                      <p className="text-sm font-semibold text-white">Gestión de accesos manuales</p>
+                      <p className="mt-1 text-xs text-zinc-400">Despliega esta sección para activar o quitar bypass a testers concretos.</p>
+                    </div>
+                    <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-300 transition group-open:rotate-180">
+                      ▼
+                    </span>
+                  </summary>
+
+                  <div className="space-y-3 border-t border-white/10 px-5 py-5">
+                    {adminUsers.map((user) => (
+                      <article key={user.id} className="flex flex-wrap items-center justify-between gap-4 rounded-[24px] border border-white/10 bg-white/[0.04] p-4">
+                        <div>
+                          <h3 className="text-sm font-semibold text-white">{user.full_name || user.email}</h3>
+                          <p className="mt-1 text-xs text-zinc-500">{user.email}</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {user.is_admin ? searchBadge("Rol", "Admin") : null}
+                          {user.bypass_subscription ? searchBadge("Bypass", "Si") : searchBadge("Bypass", "No")}
+                          <button
+                            type="button"
+                            onClick={() => void toggleBypass(user)}
+                            disabled={togglingUserId === user.id || user.is_admin}
+                            className="rounded-2xl border border-cyan-300/30 bg-cyan-300/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100 transition hover:bg-cyan-300/30 disabled:opacity-50"
+                          >
+                            {user.is_admin ? "Admin fijo" : togglingUserId === user.id ? "Guardando..." : user.bypass_subscription ? "Quitar bypass" : "Dar bypass"}
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </details>
+              </div>
+            </section>
+          ) : null}
 
         </div>
       </div>

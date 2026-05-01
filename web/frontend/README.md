@@ -18,6 +18,28 @@ npm run desktop:dev
 
 Para Tauri necesitas Rust/Cargo instalado en la maquina.
 
+## Release desktop
+
+Para sacar una nueva version con update obligatorio:
+
+```bash
+npm run desktop:release -- --version 0.1.2 --notes "Mejoras de estabilidad y nuevo flujo de actualizacion"
+```
+
+Este comando hace lo siguiente:
+
+- actualiza la version en `package.json`, `package-lock.json`, `src-tauri/Cargo.toml` y `src-tauri/tauri.conf.json`
+- genera la build desktop de Tauri
+- publica `latest.json`, la firma y el instalador en `public-landing/public/updates` y `public-landing/public/downloads`
+- deja la landing preparada para servir solo la nueva build
+
+Opciones utiles:
+
+- `--optional` para publicar una update no obligatoria
+- `--skip-landing-build` para saltar la build local de `public-landing`
+
+Despues solo queda subir y desplegar `public-landing`.
+
 ## Variables necesarias
 
 Crear `web/frontend/.env.local` con:

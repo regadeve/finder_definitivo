@@ -4,18 +4,23 @@ import { Suspense, useState, useMemo, useEffect, useCallback, useSyncExternalSto
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { STYLES } from "@/lib/supabase/discogs/styles";
+import { appRoutes } from "@/lib/routes";
 import { createClient } from "@/lib/supabase/client";
 import {
   getSearchRuntimeLabel,
+  type SearchBackend,
+  type SearchCard,
   type SearchFiltersPayload,
 } from "@/lib/discogs/search-stream";
+import { DEFAULT_SEARCH_BACKEND, getSearchBackendLabel, loadPreferredSearchBackend, savePreferredSearchBackend } from "@/lib/search/backend";
 import { openDiscogsRelease, openGoogleSearch } from "@/lib/discogs/url";
+import { getDiscogsHref } from "@/lib/discogs/url";
 import {
   fetchUserReleaseStates,
   upsertUserReleaseState,
   type UserReleaseState,
 } from "@/lib/supabase/user-releases";
-import { getSearchSessionState, setSearchSessionFilters, startSearchSession, stopSearchSession, subscribeSearchSession } from "@/lib/search/session";
+import { getSearchSessionState, setSearchSessionFilters, setSearchSessionStatus, startSearchSession, stopSearchSession, subscribeSearchSession } from "@/lib/search/session";
 
 const GENRES = ["Electronic", "Rock", "Jazz", "Funk / Soul", "Hip Hop", "Pop", "Classical", "Reggae", "Blues", "Latin"];
 const FORMATS = ["Vinyl", "CD", "Cassette", "File", "CDr", "DVD", "Box Set", "All Media", "LP", '7"', '12"', '10"', "Album", "Single", "EP", "Compilation", "Promo", "Limited Edition", "Reissue", "Remastered", "Mono", "Stereo", "White Label", "Test Pressing", "Mini-Album", "Maxi-Single", "Picture Disc", "Flexi-disc", "Shellac", "Blu-ray", "SACD", "VHS", "DVD-Video"];
@@ -147,17 +152,24 @@ export default function FinderClient() {
   const [topeResultados, setTopeResultados] = useState(initialFilters.tope_resultados);
   const [notOnLabelOnly, setNotOnLabelOnly] = useState(initialFilters.not_on_label_only);
   const [excludeVarious, setExcludeVarious] = useState(initialFilters.exclude_various);
+  const [searchBackend, setSearchBackend] = useState<SearchBackend>(DEFAULT_SEARCH_BACKEND);
+  const [exportingCsv, setExportingCsv] = useState(false);
 
   const searchSession = useSyncExternalStore(subscribeSearchSession, getSearchSessionState, getSearchSessionState);
   const { running, status, processedCount, foundCount, pageInfo, items } = searchSession;
   const [releaseStates, setReleaseStates] = useState<Record<string, UserReleaseState>>({});
+  const runtimeLabel = getSearchRuntimeLabel(searchBackend);
+
+  useEffect(() => {
+    setSearchBackend(loadPreferredSearchBackend());
+  }, []);
 
   useEffect(() => {
     let active = true;
     void (async () => {
       const { data } = await supabase.auth.getSession();
       if (!active) return;
-      if (!data.session) { router.replace("/"); return; }
+      if (!data.session) { router.replace(appRoutes.home); return; }
       setUserId(data.session.user.id);
     })();
     return () => { active = false; };
@@ -199,6 +211,69 @@ export default function FinderClient() {
     void stopSearchSession(supabase);
   }
 
+  async function exportResultsCsv() {
+    if (items.length === 0) {
+      return;
+    }
+
+    setExportingCsv(true);
+    try {
+      const escapeCsv = (value: string | number | null | undefined) => {
+        const text = value == null ? "" : String(value);
+        return `"${text.replace(/"/g, '""')}"`;
+      };
+
+      const rows = [
+        [
+          "title",
+          "artist",
+          "year",
+          "have",
+          "want",
+          "genres",
+          "styles",
+          "formats",
+          "country",
+          "has_youtube",
+          "num_for_sale",
+          "lowest_price",
+          "discogs_url",
+          "discogs_uri",
+        ],
+        ...items.map((card) => [
+          card.title,
+          card.artist,
+          card.year,
+          card.have,
+          card.want,
+          card.genres.join(" | "),
+          card.styles.join(" | "),
+          card.formats.join(" | "),
+          card.country,
+          card.has_youtube ? "Si" : "No",
+          card.num_for_sale,
+          card.lowest_price,
+          getDiscogsHref(card.uri),
+          card.uri,
+        ]),
+      ];
+
+      const csv = rows.map((row) => row.map((cell) => escapeCsv(cell)).join(",")).join("\r\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `103-finder-${searchBackend}-${timestamp}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } finally {
+      setExportingCsv(false);
+    }
+  }
+
   const start = useCallback(async (overrideFilters?: SearchFiltersPayload) => {
     if (!userId) {
       return;
@@ -206,8 +281,8 @@ export default function FinderClient() {
 
     const filters = overrideFilters ?? normalizeFilters({ year_start: yearStart, year_end: yearEnd, have_min: haveMin, have_max: haveMax, want_min: wantMin, want_max: wantMax, max_versions: maxVersions, countries_selected: countriesSelected, formats_selected: formatsSelected, type_selected: typeSelected, genres, styles, strict_genre: strictGenre, strict_style: strictStyle, sin_anyo: sinAnyo, solo_en_venta: soloEnVenta, precio_minimo: precioMinimo, precio_maximo: precioMaximo, max_copias_venta: maxCopiasVenta, tope_resultados: topeResultados, youtube_status: youtubeStatus, not_on_label_only: notOnLabelOnly, exclude_various: excludeVarious });
     setSearchSessionFilters(filters);
-    void startSearchSession(supabase, userId, filters);
-  }, [yearStart, yearEnd, haveMin, haveMax, wantMin, wantMax, maxVersions, countriesSelected, formatsSelected, typeSelected, genres, styles, strictGenre, strictStyle, sinAnyo, soloEnVenta, precioMinimo, precioMaximo, maxCopiasVenta, topeResultados, youtubeStatus, notOnLabelOnly, excludeVarious, userId, supabase]);
+    void startSearchSession(supabase, userId, filters, searchBackend);
+  }, [yearStart, yearEnd, haveMin, haveMax, wantMin, wantMax, maxVersions, countriesSelected, formatsSelected, typeSelected, genres, styles, strictGenre, strictStyle, sinAnyo, soloEnVenta, precioMinimo, precioMaximo, maxCopiasVenta, topeResultados, youtubeStatus, notOnLabelOnly, excludeVarious, userId, supabase, searchBackend]);
 
   useEffect(() => {
     setSearchSessionFilters(normalizeFilters({ year_start: yearStart, year_end: yearEnd, have_min: haveMin, have_max: haveMax, want_min: wantMin, want_max: wantMax, max_versions: maxVersions, countries_selected: countriesSelected, formats_selected: formatsSelected, type_selected: typeSelected, genres, styles, strict_genre: strictGenre, strict_style: strictStyle, sin_anyo: sinAnyo, solo_en_venta: soloEnVenta, precio_minimo: precioMinimo, precio_maximo: precioMaximo, max_copias_venta: maxCopiasVenta, tope_resultados: topeResultados, youtube_status: youtubeStatus, not_on_label_only: notOnLabelOnly, exclude_various: excludeVarious }));
@@ -243,10 +318,10 @@ export default function FinderClient() {
       setTopeResultados(parsed.tope_resultados);
       setNotOnLabelOnly(parsed.not_on_label_only);
       setExcludeVarious(parsed.exclude_various);
-      router.replace("/search");
+      router.replace(appRoutes.search);
       void start(parsed);
     } catch {
-      setStatus("No se pudieron cargar los filtros guardados.");
+      setSearchSessionStatus("No se pudieron cargar los filtros guardados.");
     }
   }, [router, searchParams, start]);
 
@@ -262,7 +337,28 @@ export default function FinderClient() {
 
         <section className="space-y-4">
            <div className="grid grid-cols-2 gap-3">
-            <div><FieldLabel>Año inicio</FieldLabel><TextInput type="number" value={yearStart} onChange={e => setYearStart(Number(e.target.value))} disabled={sinAnyo}/></div>
+             <div className="col-span-2">
+               <FieldLabel>Motor</FieldLabel>
+               <div className="grid grid-cols-2 gap-2">
+                 {(["discogs-live", "catalog-local", "catalog-hybrid"] as const).map((backend) => {
+                   const active = searchBackend === backend;
+                   return (
+                     <button
+                       key={backend}
+                       type="button"
+                       onClick={() => {
+                         setSearchBackend(backend);
+                         savePreferredSearchBackend(backend);
+                       }}
+                       className={`rounded-xl border px-3 py-2.5 text-xs font-semibold transition ${active ? "border-cyan-400/60 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"}`}
+                     >
+                       {getSearchBackendLabel(backend)}
+                     </button>
+                   );
+                 })}
+               </div>
+             </div>
+             <div><FieldLabel>Año inicio</FieldLabel><TextInput type="number" value={yearStart} onChange={e => setYearStart(Number(e.target.value))} disabled={sinAnyo}/></div>
             <div><FieldLabel>Año fin</FieldLabel><TextInput type="number" value={yearEnd} onChange={e => setYearEnd(Number(e.target.value))} disabled={sinAnyo}/></div>
             <div><FieldLabel>Have min</FieldLabel><TextInput type="number" value={haveMin} onChange={e => setHaveMin(Number(e.target.value))} /></div>
             <div><FieldLabel>Have max</FieldLabel><TextInput type="number" value={haveMax} onChange={e => setHaveMax(Number(e.target.value))} /></div>
@@ -277,6 +373,7 @@ export default function FinderClient() {
               </div>
              <div><FieldLabel>Precio min</FieldLabel><TextInput type="number" min="0" step="0.01" value={precioMinimo} onChange={e => setPrecioMinimo(Number(e.target.value))} /></div>
              <div><FieldLabel>Precio max</FieldLabel><TextInput type="number" min="0" step="0.01" value={precioMaximo} onChange={e => setPrecioMaximo(Number(e.target.value))} /></div>
+             <div><FieldLabel>Max copias venta</FieldLabel><TextInput type="number" min="0" value={maxCopiasVenta} onChange={e => setMaxCopiasVenta(Number(e.target.value))} /></div>
              <div className="col-span-2">
                <FieldLabel>YouTube</FieldLabel>
                <SelectInput value={youtubeStatus} onChange={e => setYoutubeStatus(e.target.value)}>
@@ -323,11 +420,26 @@ export default function FinderClient() {
              <button disabled={!running} onClick={stop} className="rounded-full px-6 py-3 text-sm font-bold tracking-wide text-rose-300 border border-rose-500/50 bg-rose-500/10 transition-all hover:bg-rose-500/20 active:scale-95 disabled:opacity-20 disabled:scale-100">
                PARAR ⨯
              </button>
+             <button
+               disabled={running || items.length === 0 || exportingCsv}
+               onClick={() => void exportResultsCsv()}
+               className="rounded-full px-6 py-3 text-sm font-bold tracking-wide text-emerald-100 border border-emerald-400/40 bg-emerald-400/10 transition-all hover:bg-emerald-400/20 active:scale-95 disabled:opacity-20 disabled:scale-100"
+             >
+               {exportingCsv ? "EXPORTANDO..." : "CSV ↧"}
+             </button>
           </div>
           <div className="flex items-center gap-6">
             <div className="text-right">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-400">Stream Status</p>
-              <p className="text-sm font-medium text-white">{status}</p>
+              <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Motor</p>
+              <p className="text-xs text-zinc-300">{getSearchBackendLabel(searchBackend)}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Runtime</p>
+              <p className="max-w-[240px] truncate text-xs text-zinc-300" title={runtimeLabel}>{runtimeLabel}</p>
+            </div>
+            <div className="text-right">
+               <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-400">Stream Status</p>
+               <p className="text-sm font-medium text-white">{status}</p>
             </div>
           </div>
         </header>

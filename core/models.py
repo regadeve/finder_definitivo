@@ -11,7 +11,11 @@ FormatType = Literal["Todos", "CD", "Vinyl"]
 class SearchFilters(BaseModel):
     year_start: int = 1995
     year_end: int = 1995
-    have_limit: int = 20
+
+    # RANGO DE HAVE
+    have_min: int = 0
+    have_max: int = 80
+
     max_versions: int = 2
     country: str = ""
 
@@ -27,5 +31,6 @@ class SearchFilters(BaseModel):
 
     solo_en_venta: bool = False
     precio_minimo: int = 0
+    precio_maximo: int = 0
     max_copias_venta: int = 0
     tope_resultados: int = 0

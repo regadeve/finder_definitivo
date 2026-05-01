@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { appRoutes } from "@/lib/routes";
 import { isCurrentUserAdmin } from "@/lib/supabase/profile";
 import { navigateWithTransition } from "@/lib/view-transition";
 
@@ -45,7 +46,7 @@ export default function AdminMetricsShortcut({
   return (
     <button
       type="button"
-      onClick={() => navigateWithTransition(router, "/metrics")}
+      onClick={() => navigateWithTransition(router, appRoutes.metrics)}
       className={className}
     >
       {label}
