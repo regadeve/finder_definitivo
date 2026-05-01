@@ -76,6 +76,8 @@ class SearchFilters(BaseModel):
     tope_resultados: int = 0
 
     youtube_status: str = "Todos"  # Todos / Si / No
+    not_on_label_only: bool = False
+    exclude_various: bool = False
 
 
 class CheckoutSessionRequest(BaseModel):
