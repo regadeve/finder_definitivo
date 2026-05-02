@@ -4,6 +4,7 @@ export type UserAccessRow = {
   id: string;
   is_admin: boolean;
   bypass_subscription: boolean;
+  device_transfer_bonus: number;
 };
 
 export type UserSubscriptionRow = {
@@ -30,6 +31,7 @@ export type AdminAccessUser = {
   full_name: string | null;
   is_admin: boolean;
   bypass_subscription: boolean;
+  device_transfer_bonus: number;
 };
 
 export function hasPaidAccess(status: string | null | undefined) {
@@ -40,7 +42,7 @@ export async function fetchUserAccessStatus(supabase: SupabaseClient, userId: st
   const [{ data: access, error: accessError }, { data: subscription, error: subscriptionError }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("id, is_admin, bypass_subscription")
+      .select("id, is_admin, bypass_subscription, device_transfer_bonus")
       .eq("id", userId)
       .maybeSingle(),
     supabase
@@ -75,19 +77,20 @@ export async function fetchUserAccessStatus(supabase: SupabaseClient, userId: st
 export async function fetchAdminAccessUsers(supabase: SupabaseClient) {
   const { data: profiles, error: profilesError } = await supabase
     .from("profiles")
-    .select("id, email, full_name, is_admin, bypass_subscription")
+      .select("id, email, full_name, is_admin, bypass_subscription, device_transfer_bonus")
     .order("created_at", { ascending: false })
     .limit(100);
 
   if (profilesError) throw profilesError;
 
-  return ((profiles ?? []) as Array<{ id: string; email: string; full_name: string | null; is_admin: boolean; bypass_subscription: boolean }>).map((profile) => {
+  return ((profiles ?? []) as Array<{ id: string; email: string; full_name: string | null; is_admin: boolean; bypass_subscription: boolean; device_transfer_bonus: number | null }>).map((profile) => {
     return {
       id: profile.id,
       email: profile.email,
       full_name: profile.full_name,
       is_admin: profile.is_admin ?? false,
       bypass_subscription: profile.bypass_subscription ?? false,
+      device_transfer_bonus: profile.device_transfer_bonus ?? 0,
     } satisfies AdminAccessUser;
   });
 }
@@ -103,6 +106,23 @@ export async function setUserBypassAccess(
     .update({
       bypass_subscription: bypassSubscription,
       is_admin: keepAdmin,
+    })
+    .eq("id", userId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function setUserDeviceTransferBonus(
+  supabase: SupabaseClient,
+  userId: string,
+  nextBonus: number
+) {
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      device_transfer_bonus: Math.max(0, Math.floor(nextBonus)),
     })
     .eq("id", userId);
 

@@ -110,10 +110,21 @@ async function postWithSession(
   throw new Error(`No se pudo conectar con Billing API en ${primaryUrl}.`);
 }
 
+function buildReturnUrl(returnPath: string) {
+  if (typeof window === "undefined") return "";
+  return new URL(returnPath, window.location.origin).toString();
+}
+
 export async function createCheckoutSession(supabase: SupabaseClient, returnPath = "/billing/") {
-  return postWithSession(supabase, "/billing/create-checkout-session", { return_path: returnPath });
+  return postWithSession(supabase, "/billing/create-checkout-session", {
+    return_path: returnPath,
+    return_url: buildReturnUrl(returnPath),
+  });
 }
 
 export async function createPortalSession(supabase: SupabaseClient, returnPath = "/billing/") {
-  return postWithSession(supabase, "/billing/create-portal-session", { return_path: returnPath });
+  return postWithSession(supabase, "/billing/create-portal-session", {
+    return_path: returnPath,
+    return_url: buildReturnUrl(returnPath),
+  });
 }

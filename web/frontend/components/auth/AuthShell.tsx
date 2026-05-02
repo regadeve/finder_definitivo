@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useAppLanguage } from "@/components/app-language-provider";
 import { fetchUserAccessStatus } from "@/lib/supabase/access";
 import { getBillingApiAvailability } from "@/lib/billing/api";
 import { appRoutes, normalizeAppPath } from "@/lib/routes";
@@ -19,11 +20,11 @@ function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
 }
 
-function toAuthNotice(message: string) {
+function toAuthNotice(message: string, invalidCredentialsMessage: string) {
   const normalized = message.trim().toLowerCase();
 
   if (normalized.includes("invalid login credentials") || normalized.includes("invalid credentials")) {
-    return "Email o contrasena incorrectos. Prueba con el email en minusculas y revisa que la contrasena sea exacta.";
+    return invalidCredentialsMessage;
   }
 
   return message;
@@ -33,6 +34,7 @@ function AuthShellContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
+  const { t } = useAppLanguage();
   const redirectTo = normalizeAppPath(searchParams.get("redirectTo") || appRoutes.search);
 
   const [mode, setMode] = useState<AuthMode>("login");
@@ -97,7 +99,7 @@ function AuthShellContent() {
     setLoading(false);
 
     if (error) {
-      setNotice({ kind: "error", text: toAuthNotice(error.message) });
+      setNotice({ kind: "error", text: toAuthNotice(error.message, t("auth.invalidCredentials")) });
       return;
     }
 
@@ -105,7 +107,7 @@ function AuthShellContent() {
     const userId = data.session?.user.id;
     const nextPath = userId ? await resolveDestination(userId) : appRoutes.billing;
 
-    setNotice({ kind: "success", text: "Sesion iniciada. Redirigiendo..." });
+    setNotice({ kind: "success", text: t("auth.loggedIn") });
     navigateWithTransition(router, nextPath, "replace");
   }
 
@@ -141,14 +143,14 @@ function AuthShellContent() {
       if (!billingApi.ok) {
         setNotice({
           kind: "success",
-          text: `Cuenta creada correctamente. El servidor de pagos no responde ahora mismo (${billingApi.baseUrl}), pero tu usuario ya existe y podras suscribirte mas tarde.`,
+            text: t("auth.billingUnavailable", { baseUrl: billingApi.baseUrl }),
         });
         setMode("login");
         setPassword("");
         return;
       }
 
-      setNotice({ kind: "success", text: "Cuenta creada correctamente. Entrando..." });
+      setNotice({ kind: "success", text: t("auth.accountCreated") });
       navigateWithTransition(router, appRoutes.billing, "replace");
       return;
     }
@@ -157,7 +159,7 @@ function AuthShellContent() {
     setPassword("");
     setNotice({
       kind: "success",
-      text: "Cuenta creada en Supabase. Revisa tu email para confirmar el acceso antes de entrar.",
+      text: t("auth.accountCreatedEmail"),
     });
     setMode("login");
   }
@@ -166,7 +168,7 @@ function AuthShellContent() {
     return (
       <main className="flex min-h-screen items-center justify-center px-6 py-10">
         <div className="rounded-full border border-[var(--border)] bg-[var(--card)] px-5 py-3 text-sm text-[var(--muted)] shadow-[var(--shadow)] backdrop-blur">
-          Preparando acceso...
+          {t("auth.prepare")}
         </div>
       </main>
     );
@@ -181,8 +183,8 @@ function AuthShellContent() {
           <div className="rounded-[30px] border border-white/10 bg-[rgba(7,12,24,0.92)] p-6 md:p-8">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.26em] text-cyan-300/80">Acceso</p>
-                <h1 className="mt-2 text-3xl font-semibold text-white">{isLogin ? "Inicia sesion" : "Crea tu cuenta"}</h1>
+                <p className="text-[11px] uppercase tracking-[0.26em] text-cyan-300/80">{t("auth.access")}</p>
+                <h1 className="mt-2 text-3xl font-semibold text-white">{isLogin ? t("auth.login") : t("auth.signup")}</h1>
               </div>
 
               <div className="inline-flex rounded-full border border-white/10 bg-white/[0.04] p-1">
@@ -194,7 +196,7 @@ function AuthShellContent() {
                   }}
                   className={`rounded-full px-4 py-2 text-sm font-medium transition ${isLogin ? "bg-cyan-400 text-black" : "text-zinc-400"}`}
                 >
-                  Entrar
+                  {t("auth.enter")}
                 </button>
                 <button
                   type="button"
@@ -204,14 +206,14 @@ function AuthShellContent() {
                   }}
                   className={`rounded-full px-4 py-2 text-sm font-medium transition ${!isLogin ? "bg-white text-black" : "text-zinc-400"}`}
                 >
-                  Crear usuario
+                  {t("auth.createUser")}
                 </button>
               </div>
             </div>
 
             {hasSession && (
               <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-100">
-                <span>Ya hay una sesion abierta.</span>
+                <span>{t("auth.sessionReady")}</span>
                 <div className="flex gap-2">
                   <button
                     type="button"
@@ -223,18 +225,18 @@ function AuthShellContent() {
                     }}
                     className="rounded-full bg-cyan-400 px-4 py-2 font-medium text-black"
                   >
-                    Ir a la app
+                    {t("auth.goApp")}
                   </button>
                   <button
                     type="button"
                     onClick={async () => {
                       await supabase.auth.signOut();
                       setHasSession(false);
-                      setNotice({ kind: "success", text: "Sesion cerrada." });
+                       setNotice({ kind: "success", text: t("auth.sessionClosed") });
                     }}
                     className="rounded-full border border-emerald-300/30 px-4 py-2 font-medium text-emerald-100"
                   >
-                    Cerrar sesion
+                    {t("auth.logout")}
                   </button>
                 </div>
               </div>
@@ -243,21 +245,21 @@ function AuthShellContent() {
             <form className="mt-8 space-y-5" onSubmit={isLogin ? onLogin : onSignup}>
               {!isLogin && (
                 <label className="block space-y-2">
-                  <span className="text-sm font-medium text-zinc-200">Nombre</span>
+                  <span className="text-sm font-medium text-zinc-200">{t("auth.name")}</span>
                   <input
                     className="w-full rounded-2xl border border-white/10 bg-[#0d1320] px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/70"
                     value={name}
                     onChange={(event) => setName(event.target.value)}
                     type="text"
                     autoComplete="name"
-                    placeholder="Tu nombre o alias"
+                    placeholder={t("auth.namePlaceholder")}
                     required={!isLogin}
                   />
                 </label>
               )}
 
               <label className="block space-y-2">
-                <span className="text-sm font-medium text-zinc-200">Email</span>
+                <span className="text-sm font-medium text-zinc-200">{t("auth.email")}</span>
                 <input
                   className="w-full rounded-2xl border border-white/10 bg-[#0d1320] px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/70"
                   value={email}
@@ -270,14 +272,14 @@ function AuthShellContent() {
               </label>
 
               <label className="block space-y-2">
-                <span className="text-sm font-medium text-zinc-200">Contrasena</span>
+                <span className="text-sm font-medium text-zinc-200">{t("auth.password")}</span>
                 <input
                   className="w-full rounded-2xl border border-white/10 bg-[#0d1320] px-4 py-3 text-white outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/70"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   type="password"
                   autoComplete={isLogin ? "current-password" : "new-password"}
-                  placeholder={isLogin ? "Tu contrasena" : "Minimo 6 caracteres"}
+                  placeholder={isLogin ? t("auth.passwordPlaceholderLogin") : t("auth.passwordPlaceholderSignup")}
                   minLength={6}
                   required
                 />
@@ -302,7 +304,7 @@ function AuthShellContent() {
                 disabled={loading}
                 type="submit"
               >
-                {loading ? (isLogin ? "Entrando..." : "Creando cuenta...") : isLogin ? "Entrar ahora" : "Crear usuario"}
+                {loading ? (isLogin ? t("auth.loadingLogin") : t("auth.loadingSignup")) : isLogin ? t("auth.submitLogin") : t("auth.submitSignup")}
               </button>
             </form>
           </div>
@@ -314,7 +316,7 @@ function AuthShellContent() {
 
 export default function AuthShell() {
   return (
-    <Suspense fallback={<main className="flex min-h-screen items-center justify-center px-6 py-10 text-sm text-[var(--muted)]">Preparando acceso...</main>}>
+    <Suspense fallback={<main className="flex min-h-screen items-center justify-center px-6 py-10 text-sm text-[var(--muted)]">Loading...</main>}>
       <AuthShellContent />
     </Suspense>
   );

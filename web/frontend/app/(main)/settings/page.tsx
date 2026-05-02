@@ -8,11 +8,15 @@ import { toErrorMessage } from "@/lib/desktop/errors";
 import { isTauriRuntime } from "@/lib/desktop/runtime";
 import { checkAppUpdate, installAppUpdate, type AppUpdateState } from "@/lib/desktop/updater";
 import { fetchAdminAccessUsers, fetchUserAccessStatus, setUserBypassAccess, type AdminAccessUser, type UserAccessStatus } from "@/lib/supabase/access";
+import { setUserDeviceTransferBonus } from "@/lib/supabase/access";
 import { createClient } from "@/lib/supabase/client";
 import { appRoutes } from "@/lib/routes";
 import { deleteUserSearch, fetchUserSearches, type UserSearchRow } from "@/lib/supabase/user-searches";
+import { createPortalSession } from "@/lib/billing/api";
+import { getUserDeviceAccessSummary, type DeviceAccessSummary } from "@/lib/supabase/device-access";
 import { navigateWithTransition } from "@/lib/view-transition";
 import { useRouter } from "next/navigation";
+import { useAppLanguage } from "@/components/app-language-provider";
 
 function panel(extra = "") {
   return `rounded-[28px] border border-white/10 bg-black/40 shadow-xl backdrop-blur-xl ${extra}`;
@@ -21,6 +25,7 @@ function panel(extra = "") {
 export default function SettingsPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+  const { language, setLanguage, languageNames, supportedLanguages, t } = useAppLanguage();
   
   const [isDesktop, setIsDesktop] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -40,14 +45,20 @@ export default function SettingsPage() {
   const [profile, setProfile] = useState<{full_name: string, email: string, avatar_url: string|null}>({
     full_name: "", email: "", avatar_url: null
   });
+  const [preferredLanguage, setPreferredLanguage] = useState(language);
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileNotice, setProfileNotice] = useState<{kind: "error"|"success", text: string} | null>(null);
+  const [savingLanguage, setSavingLanguage] = useState(false);
+  const [openingPortal, setOpeningPortal] = useState(false);
   const [searches, setSearches] = useState<UserSearchRow[]>([]);
   const [searchesError, setSearchesError] = useState("");
   const [accessStatus, setAccessStatus] = useState<UserAccessStatus | null>(null);
+  const [deviceSummary, setDeviceSummary] = useState<DeviceAccessSummary | null>(null);
   const [adminUsers, setAdminUsers] = useState<AdminAccessUser[]>([]);
+  const [adminDeviceSummaries, setAdminDeviceSummaries] = useState<Record<string, DeviceAccessSummary>>({});
   const [adminAccessError, setAdminAccessError] = useState("");
   const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
+  const [updatingBonusUserId, setUpdatingBonusUserId] = useState<string | null>(null);
   const [updateState, setUpdateState] = useState<AppUpdateState | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [installingUpdate, setInstallingUpdate] = useState(false);
@@ -69,18 +80,18 @@ export default function SettingsPage() {
   }
 
   function statusLabel(value: UserSearchRow["status"]) {
-    if (value === "completed") return "Completada";
-    if (value === "aborted") return "Detenida";
-    if (value === "failed") return "Error";
-    return "En curso";
+    if (value === "completed") return t("settings.completed");
+    if (value === "aborted") return t("settings.stopped");
+    if (value === "failed") return t("settings.error");
+    return t("settings.running");
   }
 
   function updateHeadline(state: AppUpdateState) {
     if (!state.available) {
-      return "Sin updates pendientes";
+      return t("settings.noPendingUpdates");
     }
 
-    return state.required ? "Actualizacion obligatoria" : "Actualizacion opcional";
+    return state.required ? t("settings.requiredUpdate") : t("settings.optionalUpdate");
   }
 
   useEffect(() => {
@@ -98,7 +109,7 @@ export default function SettingsPage() {
       
       const { data: profileData } = await supabase
         .from("profiles")
-        .select("full_name, email, avatar_url")
+          .select("full_name, email, avatar_url, preferred_language")
         .eq("id", session.user.id)
         .maybeSingle();
          
@@ -108,17 +119,24 @@ export default function SettingsPage() {
           email: profileData?.email ?? session.user.email ?? "",
           avatar_url: profileData?.avatar_url ?? null,
         });
+        setPreferredLanguage((profileData?.preferred_language as typeof language | undefined) ?? language);
 
         try {
           const status = await fetchUserAccessStatus(supabase, session.user.id);
+          const summary = await getUserDeviceAccessSummary(supabase);
           if (active) {
             setAccessStatus(status);
+            setDeviceSummary(summary);
           }
 
           if (status.isAdmin && active) {
             const users = await fetchAdminAccessUsers(supabase);
             if (active) {
               setAdminUsers(users);
+              const summaryEntries = await Promise.all(
+                users.map(async (user) => [user.id, await getUserDeviceAccessSummary(supabase, user.id)] as const)
+              );
+              setAdminDeviceSummaries(Object.fromEntries(summaryEntries));
               setAdminAccessError("");
             }
           }
@@ -171,6 +189,10 @@ export default function SettingsPage() {
 
     return () => { active = false; };
   }, [supabase, router]);
+
+  useEffect(() => {
+    setPreferredLanguage(language);
+  }, [language]);
 
   async function handleAvatarUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -228,6 +250,49 @@ export default function SettingsPage() {
       setProfileNotice({ kind: "error", text: "No se pudo guardar tu nombre de usuario." });
     } finally {
       setSavingProfile(false);
+    }
+  }
+
+  async function onSaveLanguage(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!userId) return;
+
+    setSavingLanguage(true);
+    setProfileNotice(null);
+
+    try {
+      setLanguage(preferredLanguage);
+
+      const { error } = await supabase
+        .from("profiles")
+        .upsert({ id: userId, email: profile.email, full_name: profile.full_name.trim(), preferred_language: preferredLanguage }, { onConflict: "id" });
+
+      if (error) throw error;
+
+      setProfileNotice({ kind: "success", text: t("settings.languageSaved") });
+      window.dispatchEvent(new Event("profile-updated"));
+    } catch {
+      setProfileNotice({ kind: "error", text: t("settings.languageError") });
+    } finally {
+      setSavingLanguage(false);
+    }
+  }
+
+  async function onOpenSubscriptionPortal() {
+    if (!accessStatus?.stripeCustomerId) {
+      setProfileNotice({ kind: "error", text: t("settings.noStripeCustomer") });
+      return;
+    }
+
+    setOpeningPortal(true);
+    setProfileNotice(null);
+
+    try {
+      const { url } = await createPortalSession(supabase, appRoutes.billing);
+      window.location.href = url;
+    } catch (error) {
+      setProfileNotice({ kind: "error", text: error instanceof Error ? error.message : t("settings.portalError") });
+      setOpeningPortal(false);
     }
   }
 
@@ -351,12 +416,40 @@ export default function SettingsPage() {
     }
   }
 
+  async function adjustDeviceBonus(user: AdminAccessUser, delta: number) {
+    const nextBonus = Math.max(0, user.device_transfer_bonus + delta);
+    setUpdatingBonusUserId(user.id);
+
+    try {
+      await setUserDeviceTransferBonus(supabase, user.id, nextBonus);
+      setAdminUsers((prev) => prev.map((item) => item.id === user.id ? { ...item, device_transfer_bonus: nextBonus } : item));
+      setAdminDeviceSummaries((prev) => ({
+        ...prev,
+        [user.id]: prev[user.id]
+          ? {
+              ...prev[user.id],
+              bonus: nextBonus,
+              transfersLimit: prev[user.id].isAdmin ? null : 3 + nextBonus,
+              transfersRemaining: prev[user.id].isAdmin
+                ? null
+                : Math.max((3 + nextBonus) - prev[user.id].transfersUsed, 0),
+            }
+          : prev[user.id],
+      }));
+      setAdminAccessError("");
+    } catch {
+      setAdminAccessError(t("settings.deviceBonusError"));
+    } finally {
+      setUpdatingBonusUserId(null);
+    }
+  }
+
   function accessLabel() {
-    if (!accessStatus) return "Cargando";
+    if (!accessStatus) return t("settings.loading");
     if (accessStatus.isAdmin) return "Admin";
-    if (accessStatus.bypassSubscription) return "Tester / bypass";
-    if (accessStatus.hasActiveSubscription) return accessStatus.subscriptionStatus === "trialing" ? "Prueba activa" : "Suscripcion activa";
-    return "Suscripcion requerida";
+    if (accessStatus.bypassSubscription) return t("settings.testerBypass");
+    if (accessStatus.hasActiveSubscription) return accessStatus.subscriptionStatus === "trialing" ? t("settings.activeTrial") : t("settings.activeSubscription");
+    return t("settings.subscriptionRequired");
   }
 
   async function onCheckForUpdates() {
@@ -395,25 +488,25 @@ export default function SettingsPage() {
     }
   }
 
-  if (loading) return <div className="p-10 text-zinc-400">Cargando perfil...</div>;
+  if (loading) return <div className="p-10 text-zinc-400">{t("settings.loadingProfile")}</div>;
 
   return (
     <div className="filters-scrollbar min-h-screen overflow-y-auto bg-[radial-gradient(circle_at_top_right,_rgba(6,182,212,0.1),_transparent_40%),radial-gradient(circle_at_bottom_left,_rgba(217,70,239,0.05),_transparent_40%)] p-8 md:p-12">
       <div className="mx-auto max-w-7xl space-y-8">
         
         <div>
-           <h1 className="text-4xl font-serif font-bold text-white mb-2">Mi perfil</h1>
-           <p className="text-zinc-400 text-sm">Gestiona tu foto, tu nombre de usuario y tu API key de Discogs.</p>
+           <h1 className="text-4xl font-serif font-bold text-white mb-2">{t("settings.profile")}</h1>
+           <p className="text-zinc-400 text-sm">{t("settings.subtitle")}</p>
         </div>
 
         <section className={panel("p-6")}>
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h2 className="text-xl font-bold text-white">Acceso a la app</h2>
-              <p className="mt-2 text-sm text-zinc-400">La entrada depende de tu suscripcion Stripe o de un acceso manual para admin y testers.</p>
+              <h2 className="text-xl font-bold text-white">{t("settings.appAccess")}</h2>
+              <p className="mt-2 text-sm text-zinc-400">{t("settings.appAccessHint")}</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-right">
-              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Estado actual</p>
+              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.currentStatus")}</p>
               <p className="mt-1 text-lg font-semibold text-white">{accessLabel()}</p>
             </div>
           </div>
@@ -422,11 +515,11 @@ export default function SettingsPage() {
         <section className={panel("p-6")}>
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="max-w-2xl">
-              <h2 className="text-xl font-bold text-white">Actualizaciones de escritorio</h2>
-              <p className="mt-2 text-sm text-zinc-400">Comprueba si hay una nueva version de 103 Finder y lanzala desde aqui. Cuando exista una update obligatoria, la app quedara bloqueada hasta instalarla.</p>
+              <h2 className="text-xl font-bold text-white">{t("settings.desktopUpdates")}</h2>
+              <p className="mt-2 text-sm text-zinc-400">{t("settings.desktopUpdatesHint")}</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-right">
-              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Version actual</p>
+              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.currentVersion")}</p>
               <p className="mt-1 text-lg font-semibold text-white">{updateState?.currentVersion ?? "-"}</p>
             </div>
           </div>
@@ -438,7 +531,7 @@ export default function SettingsPage() {
               disabled={!isDesktop || checkingUpdate || installingUpdate}
               className="rounded-2xl bg-[linear-gradient(135deg,#34d399,#10b981)] px-5 py-3 text-sm font-semibold text-slate-950 transition hover:brightness-105 disabled:opacity-50"
             >
-              {checkingUpdate ? "Buscando..." : "Buscar actualizaciones"}
+              {checkingUpdate ? t("settings.checkingUpdates") : t("settings.checkUpdates")}
             </button>
             <button
               type="button"
@@ -446,32 +539,32 @@ export default function SettingsPage() {
               disabled={!isDesktop || installingUpdate || !updateState?.available}
               className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/10 disabled:opacity-50"
             >
-              {installingUpdate ? "Instalando..." : "Instalar update"}
+              {installingUpdate ? t("settings.installingUpdate") : t("settings.installUpdate")}
             </button>
           </div>
 
           <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Instalada</p>
+              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.installed")}</p>
               <p className="mt-2 text-lg font-semibold text-white">{updateState?.currentVersion ?? "-"}</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Detectada</p>
+              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.detected")}</p>
               <p className="mt-2 text-lg font-semibold text-white">{updateState?.version ?? "-"}</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Minimo exigido</p>
+              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.minimumRequired")}</p>
               <p className="mt-2 text-lg font-semibold text-white">{updateState?.minimumVersion ?? "-"}</p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4">
-              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Estado</p>
+              <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.status")}</p>
               <p className="mt-2 text-lg font-semibold text-white">{updateState ? updateHeadline(updateState) : "-"}</p>
             </div>
           </div>
 
           {updateState?.available ? (
             <div className={`mt-5 rounded-2xl border px-4 py-4 text-sm ${updateState.required ? "border-rose-300/20 bg-rose-300/10 text-rose-50" : "border-emerald-300/20 bg-emerald-300/10 text-emerald-50"}`}>
-              <p className="font-semibold">{updateState.required ? "Actualizacion obligatoria" : "Nueva version disponible"}: {updateState.version}</p>
+              <p className="font-semibold">{updateState.required ? t("settings.requiredUpdate") : t("settings.newVersionAvailable")}: {updateState.version}</p>
               <p className={`mt-2 leading-6 ${updateState.required ? "text-rose-50/90" : "text-emerald-50/90"}`}>
                 {updateState.required
                   ? `Este build no deberia seguir usandose sin instalar la version ${updateState.version}.`
@@ -499,7 +592,7 @@ export default function SettingsPage() {
           ) : null}
 
           {!isDesktop ? (
-            <p className="mt-4 text-sm text-zinc-500">Las actualizaciones integradas solo funcionan dentro de la app de escritorio.</p>
+            <p className="mt-4 text-sm text-zinc-500">{t("settings.integratedUpdatesDesktopOnly")}</p>
           ) : null}
         </section>
 
@@ -517,16 +610,16 @@ export default function SettingsPage() {
                    </div>
                  )}
                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center cursor-pointer" onClick={() => fileInputRef.current?.click()}>
-                   <span className="text-white text-xs font-semibold tracking-wider">CAMBIAR</span>
-                 </div>
-                 <input type="file" ref={fileInputRef} onChange={handleAvatarUpload} accept="image/*" className="hidden" />
-               </div>
-               {savingProfile && <p className="text-xs text-cyan-400 animate-pulse">Subiendo...</p>}
-            </div>
+                    <span className="text-white text-xs font-semibold tracking-wider">{t("settings.change")}</span>
+                  </div>
+                  <input type="file" ref={fileInputRef} onChange={handleAvatarUpload} accept="image/*" className="hidden" />
+                </div>
+                {savingProfile && <p className="text-xs text-cyan-400 animate-pulse">{t("settings.uploading")}</p>}
+             </div>
 
-             <div className="flex-1 space-y-2">
-                <h2 className="text-2xl font-bold text-white">{profile.full_name || profile.email || "Tu perfil"}</h2>
-                <p className="text-zinc-400 text-sm mb-4">{profile.email}</p>
+              <div className="flex-1 space-y-2">
+                 <h2 className="text-2xl font-bold text-white">{profile.full_name || profile.email || t("settings.profileFallback")}</h2>
+                 <p className="text-zinc-400 text-sm mb-4">{profile.email}</p>
                 
                 {profileNotice && (
                    <p className={`text-sm px-4 py-2 rounded-xl mb-4 ${profileNotice.kind === 'error' ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
@@ -536,12 +629,12 @@ export default function SettingsPage() {
 
                 <form onSubmit={onSaveProfile} className="mb-5 space-y-4 max-w-xl">
                   <label className="block space-y-2">
-                    <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Nombre de usuario</span>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{t("settings.username")}</span>
                     <input
                       value={profile.full_name}
                       onChange={(event) => setProfile((prev) => ({ ...prev, full_name: event.target.value }))}
                       type="text"
-                      placeholder="Tu nombre visible"
+                      placeholder={t("settings.visibleName")}
                       className="w-full rounded-2xl border border-white/10 bg-black/50 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/50"
                     />
                   </label>
@@ -556,14 +649,107 @@ export default function SettingsPage() {
                   </label>
                   <div className="flex flex-wrap gap-3">
                     <button type="submit" disabled={savingProfile} className="rounded-xl bg-[linear-gradient(135deg,#06b6d4,#2563eb)] px-5 py-2.5 text-xs font-bold uppercase tracking-[0.16em] text-white shadow-[0_10px_30px_rgba(6,182,212,0.25)] transition hover:brightness-110 disabled:opacity-50">
-                      {savingProfile ? "Guardando..." : "Guardar perfil"}
+                      {savingProfile ? t("settings.savingProfile") : t("settings.saveProfile")}
                     </button>
                     <button onClick={logout} type="button" className="rounded-xl px-5 py-2 text-xs font-bold tracking-wide text-rose-300 border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 transition-all">
-                      CERRAR SESION
+                      {t("auth.logout")}
                     </button>
                   </div>
                 </form>
-                
+
+                <form onSubmit={onSaveLanguage} className="max-w-xl rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+                  <div className="mb-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{t("settings.language")}</p>
+                    <p className="mt-2 text-sm leading-6 text-zinc-400">{t("settings.languageHint")}</p>
+                  </div>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                    <select
+                      value={preferredLanguage}
+                      onChange={(event) => {
+                        const nextLanguage = event.target.value as typeof language;
+                        setPreferredLanguage(nextLanguage);
+                        setLanguage(nextLanguage);
+                      }}
+                      className="w-full rounded-2xl border border-white/10 bg-black/50 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/50"
+                    >
+                      {supportedLanguages.map((option) => (
+                        <option key={option} value={option}>
+                          {languageNames[option]}
+                        </option>
+                      ))}
+                    </select>
+                    <button type="submit" disabled={savingLanguage} className="rounded-xl bg-[linear-gradient(135deg,#06b6d4,#2563eb)] px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] text-white shadow-[0_10px_30px_rgba(6,182,212,0.25)] transition hover:brightness-110 disabled:opacity-50">
+                      {savingLanguage ? t("settings.savingLanguage") : t("settings.language")}
+                    </button>
+                  </div>
+                </form>
+
+                <section className="max-w-xl rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+                  <div className="mb-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{t("settings.subscriptionPanel")}</p>
+                    <p className="mt-2 text-sm leading-6 text-zinc-400">{t("settings.subscriptionPanelHint")}</p>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-zinc-300">
+                      <span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.status")}</span>
+                      <span className="mt-1 block font-semibold text-white">{accessLabel()}</span>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-zinc-300">
+                      <span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.renewal")}</span>
+                      <span className="mt-1 block font-semibold text-white">{accessStatus?.currentPeriodEnd ? formatDateTime(accessStatus.currentPeriodEnd) : "-"}</span>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-zinc-300">
+                      <span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.plan")}</span>
+                      <span className="mt-1 block font-semibold text-white">10 EUR/mes</span>
+                    </div>
+                  </div>
+
+                  {accessStatus?.cancelAtPeriodEnd && accessStatus.currentPeriodEnd ? (
+                    <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
+                      <span className="font-semibold">{t("settings.cancelAtPeriodEnd")}: </span>
+                      {t("settings.endsOn", { date: formatDateTime(accessStatus.currentPeriodEnd) })}
+                    </div>
+                  ) : null}
+
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() => void onOpenSubscriptionPortal()}
+                      disabled={openingPortal || !accessStatus?.stripeCustomerId}
+                      className="rounded-xl bg-[linear-gradient(135deg,#06b6d4,#2563eb)] px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] text-white shadow-[0_10px_30px_rgba(6,182,212,0.25)] transition hover:brightness-110 disabled:opacity-50"
+                    >
+                      {openingPortal ? t("settings.openingPortal") : t("settings.manageSubscription")}
+                    </button>
+                  </div>
+                </section>
+
+                <section className="max-w-xl rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+                  <div className="mb-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{t("settings.deviceUsage")}</p>
+                    <p className="mt-2 text-sm leading-6 text-zinc-400">{t("settings.deviceUsageHint")}</p>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-zinc-300">
+                      <span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.deviceChangesUsed")}</span>
+                      <span className="mt-1 block font-semibold text-white">{deviceSummary?.transfersUsed ?? 0}</span>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-zinc-300">
+                      <span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.deviceChangesRemaining")}</span>
+                      <span className="mt-1 block font-semibold text-white">{deviceSummary?.isAdmin ? t("deviceAccess.adminExempt") : deviceSummary?.transfersRemaining ?? 0}</span>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-zinc-300">
+                      <span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.deviceActive")}</span>
+                      <span className="mt-1 block font-semibold text-white">{deviceSummary?.activeDeviceName ?? "-"}</span>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-zinc-300">
+                      <span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.deviceReset")}</span>
+                      <span className="mt-1 block font-semibold text-white">{deviceSummary?.resetAt ? formatDateTime(deviceSummary.resetAt) : "-"}</span>
+                    </div>
+                  </div>
+                </section>
+                  
              </div>
 
           </div>
@@ -573,17 +759,17 @@ export default function SettingsPage() {
          <div className="grid gap-8 xl:grid-cols-[0.95fr_1.05fr] xl:items-start">
          <div className="space-y-8">
          <section className={panel("p-8 h-full")}>
-            <h2 className="text-xl font-bold text-white mb-2">API key de Discogs</h2>
-            <p className="text-zinc-400 text-sm mb-6">Puedes cambiar tu token personal cuando quieras para usar otra clave de Discogs.</p>
+             <h2 className="text-xl font-bold text-white mb-2">{t("settings.discogsKey")}</h2>
+             <p className="text-zinc-400 text-sm mb-6">{t("settings.discogsKeyHint")}</p>
            
            <form onSubmit={onSaveToken} className="space-y-4 max-w-lg">
              <label className="block space-y-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Discogs API key / token</span>
+                 <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{t("settings.discogsTokenLabel")}</span>
                <input
                  value={token}
                  onChange={(e) => setToken(e.target.value)}
                  type="password"
-                 placeholder="Ej: XXXXXXXXXXXX"
+                  placeholder={`${t("settings.example")} XXXXXXXXXXXX`}
                  className="w-full rounded-2xl border border-white/10 bg-black/50 px-4 py-3 text-sm text-white outline-none focus:border-cyan-400/50 transition"
                />
              </label>
@@ -596,7 +782,7 @@ export default function SettingsPage() {
 
              <div className="flex gap-3 pt-2">
                <button type="submit" disabled={!isDesktop || savingToken} className="rounded-xl bg-[linear-gradient(135deg,#06b6d4,#2563eb)] px-6 py-3 text-sm font-semibold text-white shadow-[0_10px_30px_rgba(6,182,212,0.3)] hover:brightness-110 disabled:opacity-50 transition flex-1">
-                  {savingToken ? "Guardando..." : "Guardar token"}
+                   {savingToken ? t("settings.saving") : t("settings.saveToken")}
                </button>
                <button type="button" onClick={onDeleteToken} disabled={!isDesktop || savingToken || !hasStoredToken} className="rounded-xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-50 transition">
                  Borrar
@@ -606,12 +792,12 @@ export default function SettingsPage() {
           </section>
 
           <section className={panel("p-8 h-full")}>
-            <h2 className="text-xl font-bold text-white mb-2">Catalogo PostgreSQL</h2>
-            <p className="text-zinc-400 text-sm mb-6">En desktop, `Catalogo local` y `Catalogo + live` usan primero tu DSN local si esta guardado. Si no existe, consultan el catalogo remoto; en `Catalogo + live`, los datos dinamicos de Discogs se siguen refrescando con tu token personal.</p>
+            <h2 className="text-xl font-bold text-white mb-2">{t("settings.catalog")}</h2>
+            <p className="text-zinc-400 text-sm mb-6">{t("settings.catalogHint")}</p>
 
             <form onSubmit={onSaveCatalog} className="space-y-4 max-w-lg">
               <label className="block space-y-2">
-                <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">DSN local de PostgreSQL</span>
+                <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500">{t("settings.localDsn")}</span>
                 <input
                   value={catalogDsn}
                   onChange={(event) => setCatalogDsn(event.target.value)}
@@ -622,11 +808,11 @@ export default function SettingsPage() {
               </label>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-zinc-300">
-                Estado local: <span className="font-semibold text-white">{hasCatalogDsn ? "Configurado" : "Pendiente"}</span>
+                {t("settings.localStatus")}: <span className="font-semibold text-white">{hasCatalogDsn ? t("settings.configured") : t("settings.pending")}</span>
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-zinc-300">
-                Fallback API: <span className="font-semibold text-white break-all">{catalogApiUrl}</span>
+                {t("settings.fallbackApi")}: <span className="font-semibold text-white break-all">{catalogApiUrl}</span>
               </div>
 
               {catalogNotice ? (
@@ -636,15 +822,15 @@ export default function SettingsPage() {
               ) : null}
 
               <div className="rounded-2xl border border-white/10 bg-black/30 px-4 py-3 text-sm text-zinc-300">
-                `Discogs live` sigue usando tu token local. `Catalogo + live` usara el catalogo local si hay DSN guardado; si no, consultara el catalogo remoto y luego refrescara Discogs con tu token personal.
+                {t("settings.catalogLiveHint")}
               </div>
 
               <div className="flex gap-3 pt-2">
                 <button type="submit" disabled={!isDesktop || savingCatalog} className="rounded-xl bg-[linear-gradient(135deg,#34d399,#0f766e)] px-6 py-3 text-sm font-semibold text-slate-950 shadow-[0_10px_30px_rgba(16,185,129,0.25)] hover:brightness-110 disabled:opacity-50 transition flex-1">
-                  {savingCatalog ? "Guardando..." : "Guardar conexion local"}
+                  {savingCatalog ? t("settings.saving") : t("settings.saveLocalConnection")}
                 </button>
                 <button type="button" onClick={onDeleteCatalog} disabled={!isDesktop || savingCatalog || !hasCatalogDsn} className="rounded-xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-50 transition">
-                  Borrar
+                  {t("settings.delete")}
                 </button>
               </div>
             </form>
@@ -654,11 +840,11 @@ export default function SettingsPage() {
           <section className={panel("p-8 h-full")}>
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-xl font-bold text-white mb-2">Busquedas guardadas</h2>
-               <p className="text-zinc-400 text-sm">Cada busqueda queda asociada a tu usuario con sus filtros y resultados.</p>
+                <h2 className="text-xl font-bold text-white mb-2">{t("settings.savedSearches")}</h2>
+               <p className="text-zinc-400 text-sm">{t("settings.savedSearchesHint")}</p>
              </div>
              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-right">
-               <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Historial</p>
+               <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.history")}</p>
                <p className="mt-1 text-2xl font-semibold text-white">{searches.length}</p>
              </div>
            </div>
@@ -673,8 +859,8 @@ export default function SettingsPage() {
               <details className="group rounded-[28px] border border-white/10 bg-white/[0.04]" open={searches.length <= 3}>
                 <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
                   <div>
-                    <p className="text-sm font-semibold text-white">Historial de búsquedas</p>
-                    <p className="mt-1 text-xs text-zinc-400">Despliega esta sección para ver, reutilizar o borrar búsquedas guardadas.</p>
+                    <p className="text-sm font-semibold text-white">{t("settings.searchHistory")}</p>
+                    <p className="mt-1 text-xs text-zinc-400">{t("settings.searchHistoryHint")}</p>
                   </div>
                   <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-300 transition group-open:rotate-180">
                     ▼
@@ -684,10 +870,10 @@ export default function SettingsPage() {
                 <div className="space-y-4 border-t border-white/10 px-5 py-5">
               {searches.map((search) => {
                 const filters = search.filters;
-                const yearLabel = filters.sin_anyo ? "Sin ano" : `${filters.year_start}-${filters.year_end}`;
+                const yearLabel = filters.sin_anyo ? t("settings.noYear") : `${filters.year_start}-${filters.year_end}`;
                 const priceLabel = filters.precio_maximo > 0 ? `${filters.precio_minimo}€-${filters.precio_maximo}€` : `${filters.precio_minimo}€+`;
-               const stylesLabel = filters.styles.length ? filters.styles.join(", ") : "Sin estilo";
-               const genresLabel = filters.genres.length ? filters.genres.join(", ") : "Sin genero";
+               const stylesLabel = filters.styles.length ? filters.styles.join(", ") : t("settings.noStyle");
+               const genresLabel = filters.genres.length ? filters.genres.join(", ") : t("settings.noGenre");
 
                return (
                  <article key={search.id} className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5">
@@ -697,17 +883,17 @@ export default function SettingsPage() {
                        <p className="mt-1 text-sm text-zinc-400">{formatDateTime(search.created_at)}</p>
                      </div>
                      <div className="flex flex-wrap gap-2">
-                       {searchBadge("Estado", statusLabel(search.status))}
-                       {searchBadge("Resultados", String(search.result_count))}
-                       {searchBadge("YouTube", filters.youtube_status)}
+                        {searchBadge(t("settings.status"), statusLabel(search.status))}
+                        {searchBadge(t("settings.results"), String(search.result_count))}
+                        {searchBadge(t("settings.youtube"), filters.youtube_status)}
                      </div>
                    </div>
 
                    <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                     <div className="rounded-2xl border border-white/8 bg-[#0b111c] px-4 py-3 text-xs leading-6 text-zinc-400"><span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">Generos</span><span className="mt-1 block text-zinc-300">{genresLabel}</span></div>
-                     <div className="rounded-2xl border border-white/8 bg-[#0b111c] px-4 py-3 text-xs leading-6 text-zinc-400"><span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">Estilos</span><span className="mt-1 block text-zinc-300">{stylesLabel}</span></div>
-                     <div className="rounded-2xl border border-white/8 bg-[#0b111c] px-4 py-3 text-xs leading-6 text-zinc-400"><span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">Ano</span><span className="mt-1 block text-zinc-300">{yearLabel}</span></div>
-                     <div className="rounded-2xl border border-white/8 bg-[#0b111c] px-4 py-3 text-xs leading-6 text-zinc-400"><span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">Precio</span><span className="mt-1 block text-zinc-300">{priceLabel}</span></div>
+                      <div className="rounded-2xl border border-white/8 bg-[#0b111c] px-4 py-3 text-xs leading-6 text-zinc-400"><span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.genres")}</span><span className="mt-1 block text-zinc-300">{genresLabel}</span></div>
+                      <div className="rounded-2xl border border-white/8 bg-[#0b111c] px-4 py-3 text-xs leading-6 text-zinc-400"><span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.styles")}</span><span className="mt-1 block text-zinc-300">{stylesLabel}</span></div>
+                      <div className="rounded-2xl border border-white/8 bg-[#0b111c] px-4 py-3 text-xs leading-6 text-zinc-400"><span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.year")}</span><span className="mt-1 block text-zinc-300">{yearLabel}</span></div>
+                      <div className="rounded-2xl border border-white/8 bg-[#0b111c] px-4 py-3 text-xs leading-6 text-zinc-400"><span className="block text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.price")}</span><span className="mt-1 block text-zinc-300">{priceLabel}</span></div>
                    </div>
 
                    <div className="mt-4 flex flex-wrap gap-2">
@@ -716,14 +902,14 @@ export default function SettingsPage() {
                        onClick={() => reuseSearch(search)}
                        className="rounded-2xl border border-cyan-300/30 bg-cyan-300/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100 transition hover:bg-cyan-300/30"
                      >
-                       Reutilizar busqueda
+                        {t("settings.reuseSearch")}
                      </button>
                      <button
                        type="button"
                        onClick={() => void removeSearch(search.id)}
                        className="rounded-2xl border border-rose-300/30 bg-rose-300/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-rose-100 transition hover:bg-rose-300/30"
                      >
-                       Borrar busqueda
+                        {t("settings.deleteSearch")}
                      </button>
                    </div>
                  </article>
@@ -732,9 +918,9 @@ export default function SettingsPage() {
 
                 {!searches.length && !searchesError ? (
                   <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-6 text-center">
-                    <p className="text-sm uppercase tracking-[0.22em] text-zinc-500">Sin busquedas</p>
-                    <p className="mt-3 text-lg font-semibold text-white">Todavia no has guardado ninguna busqueda.</p>
-                    <p className="mt-2 text-sm text-zinc-400">Cuando uses el buscador, los filtros quedaran registrados aqui para tu usuario.</p>
+                     <p className="text-sm uppercase tracking-[0.22em] text-zinc-500">{t("settings.noSearches")}</p>
+                     <p className="mt-3 text-lg font-semibold text-white">{t("settings.noSearchesTitle")}</p>
+                     <p className="mt-2 text-sm text-zinc-400">{t("settings.noSearchesHint")}</p>
                   </div>
                 ) : null}
                 </div>
@@ -747,11 +933,11 @@ export default function SettingsPage() {
             <section className={panel("p-8")}>
               <div className="flex items-center justify-between gap-4">
                <div>
-                 <h2 className="text-xl font-bold text-white mb-2">Acceso manual para testers</h2>
-                 <p className="text-zinc-400 text-sm">Activa o desactiva el bypass de suscripcion para usuarios concretos.</p>
+                 <h2 className="text-xl font-bold text-white mb-2">{t("settings.adminBypass")}</h2>
+                 <p className="text-zinc-400 text-sm">{t("settings.adminBypassHint")}</p>
                </div>
                <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-right">
-                 <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Usuarios</p>
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("settings.users")}</p>
                  <p className="mt-1 text-2xl font-semibold text-white">{adminUsers.length}</p>
                </div>
              </div>
@@ -764,8 +950,8 @@ export default function SettingsPage() {
                 <details className="group rounded-[28px] border border-white/10 bg-white/[0.04]">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
                     <div>
-                      <p className="text-sm font-semibold text-white">Gestión de accesos manuales</p>
-                      <p className="mt-1 text-xs text-zinc-400">Despliega esta sección para activar o quitar bypass a testers concretos.</p>
+                      <p className="text-sm font-semibold text-white">{t("settings.manualAccessManagement")}</p>
+                      <p className="mt-1 text-xs text-zinc-400">{t("settings.manualAccessManagementHint")}</p>
                     </div>
                     <span className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-300 transition group-open:rotate-180">
                       ▼
@@ -778,17 +964,39 @@ export default function SettingsPage() {
                         <div>
                           <h3 className="text-sm font-semibold text-white">{user.full_name || user.email}</h3>
                           <p className="mt-1 text-xs text-zinc-500">{user.email}</p>
+                          <p className="mt-2 text-xs text-zinc-400">
+                            {t("settings.deviceChangesRemaining")}: {adminDeviceSummaries[user.id]?.isAdmin ? t("deviceAccess.adminExempt") : adminDeviceSummaries[user.id]?.transfersRemaining ?? 0}
+                            {" · "}
+                            {t("settings.deviceChangesUsed")}: {adminDeviceSummaries[user.id]?.transfersUsed ?? 0}
+                          </p>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">
-                          {user.is_admin ? searchBadge("Rol", "Admin") : null}
-                          {user.bypass_subscription ? searchBadge("Bypass", "Si") : searchBadge("Bypass", "No")}
+                          {user.is_admin ? searchBadge(t("settings.role"), "Admin") : null}
+                          {user.bypass_subscription ? searchBadge(t("settings.bypass"), t("settings.yes")) : searchBadge(t("settings.bypass"), t("settings.no"))}
+                          {searchBadge(t("settings.deviceChanges"), user.is_admin ? t("deviceAccess.adminExempt") : `+${user.device_transfer_bonus}`)}
                           <button
                             type="button"
                             onClick={() => void toggleBypass(user)}
                             disabled={togglingUserId === user.id || user.is_admin}
                             className="rounded-2xl border border-cyan-300/30 bg-cyan-300/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100 transition hover:bg-cyan-300/30 disabled:opacity-50"
                           >
-                            {user.is_admin ? "Admin fijo" : togglingUserId === user.id ? "Guardando..." : user.bypass_subscription ? "Quitar bypass" : "Dar bypass"}
+                            {user.is_admin ? t("settings.fixedAdmin") : togglingUserId === user.id ? t("settings.saving") : user.bypass_subscription ? t("settings.removeBypass") : t("settings.grantBypass")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void adjustDeviceBonus(user, 1)}
+                            disabled={updatingBonusUserId === user.id || user.is_admin}
+                            className="rounded-2xl border border-emerald-300/30 bg-emerald-300/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100 transition hover:bg-emerald-300/30 disabled:opacity-50"
+                          >
+                            {updatingBonusUserId === user.id ? t("settings.saving") : t("settings.addDeviceChange")}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void adjustDeviceBonus(user, -1)}
+                            disabled={updatingBonusUserId === user.id || user.is_admin || user.device_transfer_bonus <= 0}
+                            className="rounded-2xl border border-amber-300/30 bg-amber-300/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-amber-100 transition hover:bg-amber-300/30 disabled:opacity-50"
+                          >
+                            {t("settings.removeDeviceChange")}
                           </button>
                         </div>
                       </article>

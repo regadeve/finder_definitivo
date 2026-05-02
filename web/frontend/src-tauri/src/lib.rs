@@ -787,7 +787,7 @@ fn start_remote_hybrid_search(
     tauri::async_runtime::spawn(async move {
         let result = match Client::builder()
             .user_agent("103FinderDesktop/0.1")
-            .timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(120))
             .build()
         {
             Ok(http_client) => {
@@ -1179,7 +1179,7 @@ async fn fetch_remote_catalog_candidates(
     catalog_api_url: &str,
     filters: &SearchFilters,
 ) -> Result<Vec<HybridCatalogCandidate>, String> {
-    let base = catalog_api_url.trim_end_matches('/');
+    let base = catalog_api_url.trim().trim_end_matches('/');
     let url = format!("{base}/catalog/candidates");
     let response = client
         .post(&url)

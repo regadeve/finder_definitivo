@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAppLanguage } from "@/components/app-language-provider";
 import { getDiscogsHref, openDiscogsRelease, openGoogleSearch } from "@/lib/discogs/url";
 import { appRoutes } from "@/lib/routes";
 import { createClient } from "@/lib/supabase/client";
@@ -43,11 +44,83 @@ function formatDateTime(value: string | null) {
   return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString("es-ES");
 }
 
-type SortMode = "recent" | "oldest" | "year-desc" | "year-asc";
+type SortMode = "recent" | "oldest" | "year-desc" | "year-asc" | "title-asc" | "title-desc";
+
+type FilterOption = {
+  value: string;
+  label: string;
+  count: number;
+};
+
+function normalizeText(value: string) {
+  return value.trim().toLowerCase();
+}
+
+type FilterDropdownProps = {
+  value: string;
+  label: string;
+  placeholder: string;
+  options: FilterOption[];
+  open: boolean;
+  onToggle: () => void;
+  onSelect: (value: string) => void;
+};
+
+function FilterDropdown({ value, label, placeholder, options, open, onToggle, onSelect }: FilterDropdownProps) {
+  const selected = options.find((option) => option.value === value);
+
+  return (
+    <div className="relative z-[80]">
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-500">{label}</p>
+      <button
+        type="button"
+        onClick={onToggle}
+        className={`flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm transition hover:border-cyan-400/40 focus:border-cyan-400/70 ${
+          selected
+            ? "border-cyan-400/25 bg-cyan-400/10 text-cyan-50 shadow-[0_0_0_1px_rgba(34,211,238,0.08)]"
+            : "border-white/10 bg-[#0d1320] text-zinc-100"
+        }`}
+      >
+        <span className={selected ? "text-cyan-50" : "text-zinc-500"}>
+          {selected ? `${selected.label} (${selected.count})` : placeholder}
+        </span>
+        <span className={`text-xs ${selected ? "text-cyan-200/80" : "text-zinc-400"} transition ${open ? "rotate-180" : ""}`}>v</span>
+      </button>
+
+      {open ? (
+        <div className="absolute left-0 right-0 top-full z-[90] mt-2 max-h-72 overflow-y-auto rounded-2xl border border-white/10 bg-[#0b111c] p-2 shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
+          <button
+            type="button"
+            onClick={() => onSelect("")}
+            className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm transition ${
+              !value ? "bg-cyan-400/15 text-cyan-100" : "text-zinc-200 hover:bg-white/5"
+            }`}
+          >
+            <span>{placeholder}</span>
+          </button>
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onSelect(option.value)}
+              className={`mt-1 flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm transition ${
+                value === option.value ? "bg-cyan-400/15 text-cyan-100" : "text-zinc-200 hover:bg-white/5"
+              }`}
+            >
+              <span className="truncate pr-3">{option.label}</span>
+              <span className="text-xs text-zinc-400">{option.count}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export default function ListenedPage() {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
+  const { t } = useAppLanguage();
 
   const [userId, setUserId] = useState<string | null>(null);
   const [items, setItems] = useState<ListenedRow[]>([]);
@@ -56,8 +129,14 @@ export default function ListenedPage() {
   const [dbError, setDbError] = useState("");
   const [styleFilter, setStyleFilter] = useState("");
   const [yearFilter, setYearFilter] = useState("");
+  const [countryFilter, setCountryFilter] = useState("");
+  const [formatFilter, setFormatFilter] = useState("");
   const [sortMode, setSortMode] = useState<SortMode>("recent");
   const [query, setQuery] = useState("");
+  const [styleMenuOpen, setStyleMenuOpen] = useState(false);
+  const [yearMenuOpen, setYearMenuOpen] = useState(false);
+  const [countryMenuOpen, setCountryMenuOpen] = useState(false);
+  const [formatMenuOpen, setFormatMenuOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -94,6 +173,18 @@ export default function ListenedPage() {
       active = false;
     };
   }, [router, supabase]);
+
+  useEffect(() => {
+    function handleWindowClick() {
+      setStyleMenuOpen(false);
+      setYearMenuOpen(false);
+      setCountryMenuOpen(false);
+      setFormatMenuOpen(false);
+    }
+
+    window.addEventListener("click", handleWindowClick);
+    return () => window.removeEventListener("click", handleWindowClick);
+  }, []);
 
   async function logout() {
     setLoggingOut(true);
@@ -148,24 +239,156 @@ export default function ListenedPage() {
     );
   }
 
-  const filteredItems = useMemo(() => {
-    const normalizedStyle = styleFilter.trim().toLowerCase();
-    const normalizedQuery = query.trim().toLowerCase();
+  const styleOptions = useMemo<FilterOption[]>(() => {
+    const normalizedQuery = normalizeText(query);
     const normalizedYear = yearFilter.trim();
+    const counts = new Map<string, { label: string; count: number }>();
+
+    for (const item of items) {
+      const matchesYear = !normalizedYear || String(item.year ?? "") === normalizedYear;
+      const haystack = [item.title ?? "", item.artist ?? "", item.country ?? "", ...(item.styles ?? [])]
+        .join(" ")
+        .toLowerCase();
+      const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
+
+      if (!matchesYear || !matchesQuery) {
+        continue;
+      }
+
+      for (const style of item.styles ?? []) {
+        const key = normalizeText(style);
+        if (!key) continue;
+        const current = counts.get(key);
+        counts.set(key, { label: current?.label ?? style, count: (current?.count ?? 0) + 1 });
+      }
+    }
+
+    return Array.from(counts.entries())
+      .sort((a, b) => a[1].label.localeCompare(b[1].label, "es", { sensitivity: "base" }))
+      .map(([value, data]) => ({ value, label: data.label, count: data.count }));
+  }, [items, query, yearFilter]);
+
+  const yearOptions = useMemo<FilterOption[]>(() => {
+    const normalizedQuery = normalizeText(query);
+    const normalizedStyle = normalizeText(styleFilter);
+    const normalizedCountry = normalizeText(countryFilter);
+    const normalizedFormat = normalizeText(formatFilter);
+    const counts = new Map<string, number>();
+
+    for (const item of items) {
+      const matchesStyle =
+        !normalizedStyle || (item.styles ?? []).some((style) => normalizeText(style) === normalizedStyle);
+      const matchesCountry = !normalizedCountry || normalizeText(item.country ?? "") === normalizedCountry;
+      const matchesFormat =
+        !normalizedFormat || (item.formats ?? []).some((format) => normalizeText(format) === normalizedFormat);
+      const haystack = [item.title ?? "", item.artist ?? "", item.country ?? "", ...(item.styles ?? [])]
+        .join(" ")
+        .toLowerCase();
+      const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
+
+      if (!matchesStyle || !matchesCountry || !matchesFormat || !matchesQuery || item.year == null) {
+        continue;
+      }
+
+      const key = String(item.year);
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+
+    return Array.from(counts.entries())
+      .sort((a, b) => Number(b[0]) - Number(a[0]))
+      .map(([value, count]) => ({ value, label: value, count }));
+  }, [countryFilter, formatFilter, items, query, styleFilter]);
+
+  const countryOptions = useMemo<FilterOption[]>(() => {
+    const normalizedQuery = normalizeText(query);
+    const normalizedStyle = normalizeText(styleFilter);
+    const normalizedYear = yearFilter.trim();
+    const normalizedFormat = normalizeText(formatFilter);
+    const counts = new Map<string, { label: string; count: number }>();
+
+    for (const item of items) {
+      const matchesStyle =
+        !normalizedStyle || (item.styles ?? []).some((style) => normalizeText(style) === normalizedStyle);
+      const matchesYear = !normalizedYear || String(item.year ?? "") === normalizedYear;
+      const matchesFormat =
+        !normalizedFormat || (item.formats ?? []).some((format) => normalizeText(format) === normalizedFormat);
+      const haystack = [item.title ?? "", item.artist ?? "", item.country ?? "", ...(item.styles ?? [])]
+        .join(" ")
+        .toLowerCase();
+      const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
+
+      const country = (item.country ?? "").trim();
+      if (!matchesStyle || !matchesYear || !matchesFormat || !matchesQuery || !country) {
+        continue;
+      }
+
+      const key = normalizeText(country);
+      const current = counts.get(key);
+      counts.set(key, { label: current?.label ?? country, count: (current?.count ?? 0) + 1 });
+    }
+
+    return Array.from(counts.entries())
+      .sort((a, b) => a[1].label.localeCompare(b[1].label, "es", { sensitivity: "base" }))
+      .map(([value, data]) => ({ value, label: data.label, count: data.count }));
+  }, [formatFilter, items, query, styleFilter, yearFilter]);
+
+  const formatOptions = useMemo<FilterOption[]>(() => {
+    const normalizedQuery = normalizeText(query);
+    const normalizedStyle = normalizeText(styleFilter);
+    const normalizedYear = yearFilter.trim();
+    const normalizedCountry = normalizeText(countryFilter);
+    const counts = new Map<string, { label: string; count: number }>();
+
+    for (const item of items) {
+      const matchesStyle =
+        !normalizedStyle || (item.styles ?? []).some((style) => normalizeText(style) === normalizedStyle);
+      const matchesYear = !normalizedYear || String(item.year ?? "") === normalizedYear;
+      const matchesCountry = !normalizedCountry || normalizeText(item.country ?? "") === normalizedCountry;
+      const haystack = [item.title ?? "", item.artist ?? "", item.country ?? "", ...(item.styles ?? [])]
+        .join(" ")
+        .toLowerCase();
+      const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
+
+      if (!matchesStyle || !matchesYear || !matchesCountry || !matchesQuery) {
+        continue;
+      }
+
+      for (const format of item.formats ?? []) {
+        const key = normalizeText(format);
+        if (!key) continue;
+        const current = counts.get(key);
+        counts.set(key, { label: current?.label ?? format, count: (current?.count ?? 0) + 1 });
+      }
+    }
+
+    return Array.from(counts.entries())
+      .sort((a, b) => a[1].label.localeCompare(b[1].label, "es", { sensitivity: "base" }))
+      .map(([value, data]) => ({ value, label: data.label, count: data.count }));
+  }, [countryFilter, items, query, styleFilter, yearFilter]);
+
+  const filteredItems = useMemo(() => {
+    const normalizedStyle = normalizeText(styleFilter);
+    const normalizedQuery = normalizeText(query);
+    const normalizedYear = yearFilter.trim();
+    const normalizedCountry = normalizeText(countryFilter);
+    const normalizedFormat = normalizeText(formatFilter);
 
     const next = items.filter((item) => {
       const matchesStyle =
         !normalizedStyle ||
-        (item.styles ?? []).some((style) => style.toLowerCase().includes(normalizedStyle));
+        (item.styles ?? []).some((style) => normalizeText(style) === normalizedStyle);
 
       const matchesYear = !normalizedYear || String(item.year ?? "") === normalizedYear;
+      const matchesCountry = !normalizedCountry || normalizeText(item.country ?? "") === normalizedCountry;
+      const matchesFormat =
+        !normalizedFormat || (item.formats ?? []).some((format) => normalizeText(format) === normalizedFormat);
 
       const haystack = [item.title ?? "", item.artist ?? "", item.country ?? "", ...(item.styles ?? [])]
         .join(" ")
         .toLowerCase();
       const matchesQuery = !normalizedQuery || haystack.includes(normalizedQuery);
 
-      return matchesStyle && matchesYear && matchesQuery;
+      return matchesStyle && matchesYear && matchesCountry && matchesFormat && matchesQuery;
     });
 
     next.sort((a, b) => {
@@ -181,14 +404,47 @@ export default function ListenedPage() {
         return (a.year ?? Infinity) - (b.year ?? Infinity);
       }
 
+      if (sortMode === "title-asc") {
+        return (a.title ?? "").localeCompare(b.title ?? "", "es", { sensitivity: "base" });
+      }
+
+      if (sortMode === "title-desc") {
+        return (b.title ?? "").localeCompare(a.title ?? "", "es", { sensitivity: "base" });
+      }
+
       return (new Date(b.listened_at ?? 0).getTime() || 0) - (new Date(a.listened_at ?? 0).getTime() || 0);
     });
 
     return next;
-  }, [items, query, sortMode, styleFilter, yearFilter]);
+  }, [countryFilter, formatFilter, items, query, sortMode, styleFilter, yearFilter]);
+
+  const activeFilterChips = useMemo(() => {
+    const chips: Array<{ key: string; label: string; value: string; clear: () => void }> = [];
+
+    if (styleFilter) {
+      const selected = styleOptions.find((option) => option.value === styleFilter);
+      chips.push({ key: "style", label: t("listened.style"), value: selected?.label ?? styleFilter, clear: () => setStyleFilter("") });
+    }
+
+    if (yearFilter) {
+      chips.push({ key: "year", label: t("listened.year"), value: yearFilter, clear: () => setYearFilter("") });
+    }
+
+    if (countryFilter) {
+      const selected = countryOptions.find((option) => option.value === countryFilter);
+      chips.push({ key: "country", label: t("listened.country"), value: selected?.label ?? countryFilter, clear: () => setCountryFilter("") });
+    }
+
+    if (formatFilter) {
+      const selected = formatOptions.find((option) => option.value === formatFilter);
+      chips.push({ key: "format", label: t("listened.format"), value: selected?.label ?? formatFilter, clear: () => setFormatFilter("") });
+    }
+
+    return chips;
+  }, [countryFilter, countryOptions, formatFilter, formatOptions, styleFilter, styleOptions, t, yearFilter]);
 
   if (loading) {
-    return <main className="min-h-screen bg-[#050816] p-8 text-zinc-200">Cargando escuchados...</main>;
+    return <main className="min-h-screen bg-[#050816] p-8 text-zinc-200">{t("listened.loading")}</main>;
   }
 
   return (
@@ -204,49 +460,170 @@ export default function ListenedPage() {
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.34em] text-cyan-300/80">Listened Archive</p>
               <h1 className="mt-4 max-w-3xl font-[var(--font-display-serif)] text-5xl leading-none text-white md:text-7xl">
-                Todo lo que ya has escuchado.
+                {t("listened.title")}
               </h1>
               <p className="mt-5 max-w-2xl text-sm leading-7 text-zinc-400 md:text-base">
-                Consulta tu historial por usuario, con fecha de escucha, filtros y ordenacion por antiguedad o ano de produccion.
+                {t("listened.description")}
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-2">
               <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">Escuchados</p>
+                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">{t("listened.count")}</p>
                 <p className="mt-3 text-3xl font-semibold text-white">{items.length}</p>
               </div>
               <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">Favoritos</p>
+                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">{t("listened.favorites")}</p>
                 <p className="mt-3 text-3xl font-semibold text-white">{items.filter((item) => item.is_favorite).length}</p>
               </div>
             </div>
           </div>
         </section>
 
-        <section className={`${panel("animate-fade-up-soft p-5 md:p-6")} [animation-delay:120ms]`}>
+        <section className={`${panel("animate-fade-up-soft relative z-20 p-5 md:p-6")} [animation-delay:120ms]`}>
           <div className="flex flex-wrap gap-3">
-            <button type="button" onClick={() => navigateWithTransition(router, appRoutes.search)} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-white/[0.08]">Buscador (Finder)</button>
-            <button type="button" onClick={() => navigateWithTransition(router, appRoutes.favorites)} className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm font-medium text-amber-100 transition hover:bg-amber-400/20">Ver favoritos</button>
-            <button type="button" onClick={logout} disabled={loggingOut} className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm font-medium text-rose-100 transition hover:bg-rose-400/20 disabled:opacity-50">{loggingOut ? "Cerrando..." : "Cerrar sesion"}</button>
+            <button type="button" onClick={() => navigateWithTransition(router, appRoutes.search)} className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-white/[0.08]">{t("listened.finder")}</button>
+            <button type="button" onClick={() => navigateWithTransition(router, appRoutes.favorites)} className="rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm font-medium text-amber-100 transition hover:bg-amber-400/20">{t("listened.viewFavorites")}</button>
+            <button type="button" onClick={logout} disabled={loggingOut} className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm font-medium text-rose-100 transition hover:bg-rose-400/20 disabled:opacity-50">{loggingOut ? `${t("auth.logout")}...` : t("auth.logout")}</button>
           </div>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar titulo, artista o pais..." className="w-full rounded-2xl border border-white/10 bg-[#0d1320] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/70" />
-            <input value={styleFilter} onChange={(e) => setStyleFilter(e.target.value)} placeholder="Filtrar por estilo..." className="w-full rounded-2xl border border-white/10 bg-[#0d1320] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/70" />
-            <input value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} placeholder="Ano de produccion..." className="w-full rounded-2xl border border-white/10 bg-[#0d1320] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/70" />
-            <select value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)} className="w-full rounded-2xl border border-white/10 bg-[#0d1320] px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-cyan-400/70">
-              <option value="recent">Mas recientes</option>
-              <option value="oldest">Mas antiguos</option>
-              <option value="year-desc">Ano produccion desc</option>
-              <option value="year-asc">Ano produccion asc</option>
+          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("listened.searchPlaceholder")} className="w-full rounded-2xl border border-white/10 bg-[#0d1320] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-cyan-400/70" />
+            <div onClick={(event) => event.stopPropagation()}>
+              <FilterDropdown
+                value={styleFilter}
+                label={t("listened.style")}
+                placeholder={t("listened.allStyles")}
+                options={styleOptions}
+                open={styleMenuOpen}
+                onToggle={() => {
+                  setStyleMenuOpen((prev) => !prev);
+                  setYearMenuOpen(false);
+                  setCountryMenuOpen(false);
+                  setFormatMenuOpen(false);
+                }}
+                onSelect={(value) => {
+                  setStyleFilter(value);
+                  setStyleMenuOpen(false);
+                }}
+              />
+            </div>
+            <div onClick={(event) => event.stopPropagation()}>
+              <FilterDropdown
+                value={yearFilter}
+                label={t("listened.year")}
+                placeholder={t("listened.allYears")}
+                options={yearOptions}
+                open={yearMenuOpen}
+                onToggle={() => {
+                  setYearMenuOpen((prev) => !prev);
+                  setStyleMenuOpen(false);
+                  setCountryMenuOpen(false);
+                  setFormatMenuOpen(false);
+                }}
+                onSelect={(value) => {
+                  setYearFilter(value);
+                  setYearMenuOpen(false);
+                }}
+              />
+            </div>
+            <div onClick={(event) => event.stopPropagation()}>
+              <FilterDropdown
+                value={countryFilter}
+                label={t("listened.country")}
+                placeholder={t("listened.allCountries")}
+                options={countryOptions}
+                open={countryMenuOpen}
+                onToggle={() => {
+                  setCountryMenuOpen((prev) => !prev);
+                  setStyleMenuOpen(false);
+                  setYearMenuOpen(false);
+                  setFormatMenuOpen(false);
+                }}
+                onSelect={(value) => {
+                  setCountryFilter(value);
+                  setCountryMenuOpen(false);
+                }}
+              />
+            </div>
+            <div onClick={(event) => event.stopPropagation()}>
+              <FilterDropdown
+                value={formatFilter}
+                label={t("listened.format")}
+                placeholder={t("listened.allFormats")}
+                options={formatOptions}
+                open={formatMenuOpen}
+                onToggle={() => {
+                  setFormatMenuOpen((prev) => !prev);
+                  setStyleMenuOpen(false);
+                  setYearMenuOpen(false);
+                  setCountryMenuOpen(false);
+                }}
+                onSelect={(value) => {
+                  setFormatFilter(value);
+                  setFormatMenuOpen(false);
+                }}
+              />
+            </div>
+          </div>
+
+          {(activeFilterChips.length > 0 || query) && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {query ? (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-semibold text-zinc-200 transition hover:bg-white/[0.1]"
+                >
+                  {t("listened.text")}: {query} x
+                </button>
+              ) : null}
+              {activeFilterChips.map((chip) => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  onClick={chip.clear}
+                  className="rounded-full border border-cyan-400/20 bg-cyan-400/12 px-3 py-1.5 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-400/18"
+                >
+                  {chip.label}: {chip.value} x
+                </button>
+              ))}
+              {activeFilterChips.length > 1 || (activeFilterChips.length > 0 && query) ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStyleFilter("");
+                    setYearFilter("");
+                    setCountryFilter("");
+                    setFormatFilter("");
+                    setQuery("");
+                  }}
+                  className="rounded-full border border-rose-400/20 bg-rose-400/12 px-3 py-1.5 text-xs font-semibold text-rose-100 transition hover:bg-rose-400/18"
+                >
+                  {t("listened.clearFilters")}
+                </button>
+              ) : null}
+            </div>
+          )}
+
+          <div className="mt-4 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+            <div className="rounded-2xl border border-white/10 bg-[#0d1320] px-4 py-3 text-sm text-zinc-400">
+              {t("listened.results", { count: filteredItems.length })}
+            </div>
+            <select value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)} className="w-full rounded-2xl border border-white/10 bg-[#0d1320] px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-cyan-400/70 md:min-w-[220px]">
+              <option value="recent">{t("listened.recent")}</option>
+              <option value="oldest">{t("listened.oldest")}</option>
+              <option value="year-desc">{t("listened.yearDesc")}</option>
+              <option value="year-asc">{t("listened.yearAsc")}</option>
+              <option value="title-asc">{t("listened.titleAsc")}</option>
+              <option value="title-desc">{t("listened.titleDesc")}</option>
             </select>
           </div>
 
           {dbError && <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm text-rose-100">{dbError}</div>}
         </section>
 
-        <section className="mt-8 space-y-4">
+        <section className="relative z-0 mt-8 space-y-4">
           {filteredItems.map((row, index) => (
             <a
               key={row.release_uri}
@@ -336,8 +713,8 @@ export default function ListenedPage() {
           {filteredItems.length === 0 && (
             <div className={`${panel("animate-fade-up-soft p-8 text-center")} [animation-delay:180ms]`}>
               <p className="text-sm uppercase tracking-[0.22em] text-zinc-500">No listened releases</p>
-              <p className="mt-3 text-lg font-semibold text-white">No hay resultados para esos filtros.</p>
-              <p className="mt-2 text-sm leading-6 text-zinc-400">Prueba otro estilo, ano o tipo de ordenacion, o marca escuchados desde la pantalla de resultados.</p>
+              <p className="mt-3 text-lg font-semibold text-white">{t("listened.noResults")}</p>
+              <p className="mt-2 text-sm leading-6 text-zinc-400">{t("listened.noResultsHint")}</p>
             </div>
           )}
         </section>

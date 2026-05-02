@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAppLanguage } from "@/components/app-language-provider";
 import { createClient } from "@/lib/supabase/client";
 import { getDiscogsHref, openDiscogsRelease, openGoogleSearch } from "@/lib/discogs/url";
 import { appRoutes } from "@/lib/routes";
@@ -44,6 +45,7 @@ function formatDate(value: string | null) {
 export default function FavoritesPage() {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
+  const { t } = useAppLanguage();
 
   const [userId, setUserId] = useState<string | null>(null);
   const [items, setItems] = useState<FavoriteRow[]>([]);
@@ -132,7 +134,7 @@ export default function FavoritesPage() {
   }
 
   if (loading) {
-    return <main className="min-h-screen bg-[#050816] p-8 text-zinc-200">Cargando favoritos...</main>;
+    return <main className="min-h-screen bg-[#050816] p-8 text-zinc-200">{t("favorites.loading")}</main>;
   }
 
   return (
@@ -148,20 +150,20 @@ export default function FavoritesPage() {
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.34em] text-cyan-300/80">Favorite Crate</p>
               <h1 className="mt-4 max-w-3xl font-[var(--font-display-serif)] text-5xl leading-none text-white md:text-7xl">
-                Tus favoritos y lo que ya has escuchado.
+                {t("favorites.title")}
               </h1>
               <p className="mt-5 max-w-2xl text-sm leading-7 text-zinc-400 md:text-base">
-                Cada usuario tiene su propia coleccion guardada. Los releases escuchados aparecen en rojo para distinguirlos al instante.
+                {t("favorites.description")}
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-2">
               <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">Favoritos</p>
+                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">{t("favorites.count")}</p>
                 <p className="mt-3 text-3xl font-semibold text-white">{items.length}</p>
               </div>
               <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">Escuchados</p>
+                <p className="text-xs uppercase tracking-[0.22em] text-zinc-500">{t("favorites.listenedCount")}</p>
                 <p className="mt-3 text-3xl font-semibold text-white">{items.filter((item) => item.listened).length}</p>
               </div>
             </div>
@@ -175,14 +177,14 @@ export default function FavoritesPage() {
               onClick={() => navigateWithTransition(router, appRoutes.search)}
               className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-zinc-200 transition hover:bg-white/[0.08]"
             >
-              Volver a filtros
+              {t("favorites.backFilters")}
             </button>
             <button
               type="button"
               onClick={() => navigateWithTransition(router, appRoutes.listened)}
               className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm font-medium text-rose-100 transition hover:bg-rose-400/20"
             >
-              Ver escuchados
+              {t("favorites.viewListened")}
             </button>
             <button
               type="button"
@@ -190,7 +192,7 @@ export default function FavoritesPage() {
               disabled={loggingOut}
               className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-4 py-3 text-sm font-medium text-rose-100 transition hover:bg-rose-400/20 disabled:opacity-50"
             >
-              {loggingOut ? "Cerrando..." : "Cerrar sesion"}
+              {loggingOut ? `${t("auth.logout")}...` : t("auth.logout")}
             </button>
           </div>
 
@@ -238,15 +240,15 @@ export default function FavoritesPage() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-lg font-semibold text-white">
-                        {row.title || "Sin titulo"} <span className="text-zinc-500">({row.year ?? "-"})</span>
+                        {row.title || t("favorites.noTitle")} <span className="text-zinc-500">({row.year ?? "-"})</span>
                       </div>
                       <div className="mt-1 truncate text-sm text-zinc-400">{row.artist || "-"}</div>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {row.listened ? metricBadge("Escuchado", "Si") : null}
-                      {metricBadge("Favorito", "Si")}
-                      {metricBadge("Pais", row.country || "Unknown")}
-                      {row.listened ? metricBadge("Fecha", formatDate(row.listened_at)) : null}
+                      {row.listened ? metricBadge(t("favorites.listened"), t("common.yes")) : null}
+                      {metricBadge(t("favorites.favorite"), t("common.yes"))}
+                      {metricBadge(t("listened.country"), row.country || t("common.unknown"))}
+                      {row.listened ? metricBadge(t("favorites.date"), formatDate(row.listened_at)) : null}
                     </div>
                   </div>
 
@@ -263,7 +265,7 @@ export default function FavoritesPage() {
                       }}
                       className="rounded-2xl border border-cyan-300/30 bg-cyan-300/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100 transition hover:bg-cyan-300/30"
                     >
-                      Abrir en Discogs
+                      {t("favorites.openDiscogs")}
                     </button>
                     <button
                       type="button"
@@ -274,7 +276,7 @@ export default function FavoritesPage() {
                       }}
                       className="rounded-2xl border border-emerald-300/30 bg-emerald-300/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100 transition hover:bg-emerald-300/30"
                     >
-                      Buscar en Google
+                      {t("favorites.searchGoogle")}
                     </button>
                     <button
                       type="button"
@@ -289,7 +291,7 @@ export default function FavoritesPage() {
                           : "border border-white/10 bg-white/[0.04] text-zinc-200 hover:bg-white/[0.08]"
                        }`}
                     >
-                      {row.listened ? "Quitar escuchado" : "Marcar escuchado"}
+                      {row.listened ? t("favorites.markUnlistened") : t("favorites.markListened")}
                     </button>
                     <button
                       type="button"
@@ -300,12 +302,12 @@ export default function FavoritesPage() {
                       }}
                       className="rounded-2xl border border-amber-300/30 bg-amber-300/20 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-amber-100 transition hover:bg-amber-300/30"
                     >
-                      Quitar favorito
+                      {t("favorites.removeFavorite")}
                     </button>
                   </div>
 
                   {row.styles?.length ? (
-                    <div className="mt-3 text-xs leading-6 text-zinc-400">Estilos: {row.styles.join(", ")}</div>
+                    <div className="mt-3 text-xs leading-6 text-zinc-400">{t("favorites.styles")}: {row.styles.join(", ")}</div>
                   ) : null}
                 </div>
               </div>
@@ -314,10 +316,10 @@ export default function FavoritesPage() {
 
           {items.length === 0 && (
             <div className={`${panel("animate-fade-up-soft p-8 text-center")} [animation-delay:180ms]`}>
-              <p className="text-sm uppercase tracking-[0.22em] text-zinc-500">No favorites yet</p>
-              <p className="mt-3 text-lg font-semibold text-white">Todavia no has guardado favoritos.</p>
+              <p className="text-sm uppercase tracking-[0.22em] text-zinc-500">{t("favorites.noFavoritesTag")}</p>
+              <p className="mt-3 text-lg font-semibold text-white">{t("favorites.noFavorites")}</p>
               <p className="mt-2 text-sm leading-6 text-zinc-400">
-                En la pantalla de resultados puedes marcar cualquier release como favorito y quedara guardado solo para tu usuario.
+                {t("favorites.noFavoritesHint")}
               </p>
             </div>
           )}

@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useAppLanguage } from "@/components/app-language-provider";
 import { appRoutes } from "@/lib/routes";
 import { fetchUserAccessStatus, type UserAccessStatus } from "@/lib/supabase/access";
 import { createCheckoutSession, createPortalSession, getBillingApiAvailability } from "@/lib/billing/api";
@@ -18,6 +19,7 @@ function BillingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
+  const { t } = useAppLanguage();
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -48,17 +50,17 @@ function BillingPageContent() {
         setBillingApiAvailable(billingApi.ok);
 
         if (searchParams.get("checkout") === "success") {
-          setMessage("Pago recibido. Si Stripe ya confirmo la suscripcion, en unos segundos tendras acceso.");
+          setMessage(t("billing.paymentReceived"));
         } else if (searchParams.get("checkout") === "cancelled") {
-          setMessage("La suscripcion se cancelo antes de completar el pago.");
+          setMessage(t("billing.cancelled"));
         } else if (nextAccess.canUseApp) {
-          setMessage("Tu acceso esta listo.");
+          setMessage(t("billing.ready"));
         } else if (!billingApi.ok) {
-          setMessage(`Tu cuenta existe, pero ahora mismo el servidor de pagos no responde (${billingApi.baseUrl}). Intentalo de nuevo mas tarde.`);
+          setMessage(t("billing.apiDown", { baseUrl: billingApi.baseUrl }));
         }
       } catch (error) {
         if (active) {
-          setMessage("No se pudo comprobar tu acceso.");
+          setMessage(t("billing.accessError"));
         }
       } finally {
         if (active) setLoading(false);
@@ -76,7 +78,7 @@ function BillingPageContent() {
       const { url } = await createCheckoutSession(supabase, appRoutes.billing);
       window.location.href = url;
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "No se pudo iniciar el pago.");
+      setMessage(error instanceof Error ? error.message : t("billing.subscribeError"));
       setBusy(false);
     }
   }
@@ -87,7 +89,7 @@ function BillingPageContent() {
       const { url } = await createPortalSession(supabase, appRoutes.billing);
       window.location.href = url;
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "No se pudo abrir el portal de Stripe.");
+      setMessage(error instanceof Error ? error.message : t("billing.portalError"));
       setBusy(false);
     }
   }
@@ -98,16 +100,16 @@ function BillingPageContent() {
   }
 
   if (loading) {
-    return <main className="flex min-h-screen items-center justify-center bg-[#050816] px-6 text-zinc-400">Comprobando suscripcion...</main>;
+    return <main className="flex min-h-screen items-center justify-center bg-[#050816] px-6 text-zinc-400">{t("billing.checking")}</main>;
   }
 
   const subscriptionLabel = access?.hasActiveSubscription
     ? access.subscriptionStatus === "trialing"
-      ? "Prueba activa"
-      : "Suscripcion activa"
+      ? t("billing.activeTrial")
+      : t("billing.activeSubscription")
     : access?.bypassSubscription || access?.isAdmin
-      ? "Acceso manual"
-      : "Suscripcion requerida";
+      ? t("billing.manualAccess")
+      : t("billing.required");
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_right,_rgba(6,182,212,0.14),_transparent_30%),radial-gradient(circle_at_bottom_left,_rgba(244,63,94,0.08),_transparent_28%),#050816] px-6 py-10 md:px-10">
@@ -116,28 +118,28 @@ function BillingPageContent() {
           <div className="rounded-[30px] border border-white/10 bg-[rgba(7,12,24,0.92)] p-6 md:p-8">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.26em] text-cyan-300/80">Suscripcion</p>
-                <h1 className="mt-2 text-3xl font-semibold text-white">Acceso a 103 FINDER</h1>
-                <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-400">La app requiere una suscripcion mensual de 10 EUR, salvo cuentas con acceso manual para admin o testers.</p>
+                <p className="text-[11px] uppercase tracking-[0.26em] text-cyan-300/80">{t("billing.subscription")}</p>
+                <h1 className="mt-2 text-3xl font-semibold text-white">{t("billing.title")}</h1>
+                <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-400">{t("billing.description")}</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-right">
-                <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Estado</p>
+                <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("billing.status")}</p>
                 <p className="mt-1 text-lg font-semibold text-white">{subscriptionLabel}</p>
               </div>
             </div>
 
             <div className="mt-6 grid gap-3 md:grid-cols-3">
               <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Plan</p>
+                 <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("billing.plan")}</p>
                 <p className="mt-2 text-xl font-semibold text-white">10 EUR/mes</p>
               </div>
               <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Renovacion</p>
+                 <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("billing.renewal")}</p>
                 <p className="mt-2 text-xl font-semibold text-white">{formatDate(access?.currentPeriodEnd ?? null)}</p>
               </div>
               <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">Acceso extra</p>
-                <p className="mt-2 text-xl font-semibold text-white">{access?.bypassSubscription || access?.isAdmin ? "Si" : "No"}</p>
+                 <p className="text-[10px] uppercase tracking-[0.22em] text-zinc-500">{t("billing.extraAccess")}</p>
+                 <p className="mt-2 text-xl font-semibold text-white">{access?.bypassSubscription || access?.isAdmin ? t("common.yes") : "No"}</p>
               </div>
             </div>
 
@@ -152,7 +154,7 @@ function BillingPageContent() {
                   onClick={() => navigateWithTransition(router, appRoutes.search)}
                   className="rounded-2xl bg-cyan-400 px-5 py-3 text-sm font-semibold text-black transition hover:brightness-110"
                 >
-                  Entrar a la app
+                  {t("billing.enterApp")}
                 </button>
               ) : null}
               <button
@@ -161,7 +163,7 @@ function BillingPageContent() {
                 disabled={busy || !billingApiAvailable}
                 className="rounded-2xl border border-white/10 bg-white px-5 py-3 text-sm font-semibold text-black transition hover:brightness-95 disabled:opacity-50"
               >
-                {busy ? "Abriendo Stripe..." : billingApiAvailable ? "Suscribirme por 10 EUR/mes" : "Pagos temporalmente no disponibles"}
+                 {busy ? t("billing.openStripe") : billingApiAvailable ? t("billing.subscribe") : t("billing.paymentsUnavailable")}
               </button>
               <button
                 type="button"
@@ -169,14 +171,14 @@ function BillingPageContent() {
                 disabled={busy || !billingApiAvailable || !access?.stripeCustomerId}
                 className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08] disabled:opacity-50"
               >
-                Gestionar suscripcion
+                 {t("billing.manage")}
               </button>
               <button
                 type="button"
                 onClick={logout}
                 className="rounded-2xl border border-rose-400/20 bg-rose-400/10 px-5 py-3 text-sm font-semibold text-rose-100 transition hover:bg-rose-400/20"
               >
-                Cerrar sesion
+                 {t("auth.logout")}
               </button>
             </div>
           </div>
@@ -188,7 +190,7 @@ function BillingPageContent() {
 
 export default function BillingPage() {
   return (
-    <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-[#050816] px-6 text-zinc-400">Comprobando suscripcion...</main>}>
+    <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-[#050816] px-6 text-zinc-400">Loading...</main>}>
       <BillingPageContent />
     </Suspense>
   );
