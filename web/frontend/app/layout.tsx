@@ -3,6 +3,8 @@ import { Suspense } from "react";
 import NavProgress from "@/components/NavProgress";
 import { DesktopUpdateNotice } from "@/components/desktop-update-notice";
 import { AppLanguageProvider } from "@/components/app-language-provider";
+import { AuthSessionProvider } from "@/components/auth-session-provider";
+import { OnlinePresenceProvider } from "@/components/online-presence-provider";
 import UserPresenceHeartbeat from "@/components/UserPresenceHeartbeat";
 import "./globals.css";
 
@@ -27,12 +29,16 @@ export default function RootLayout({
         }}
       >
         <AppLanguageProvider>
-          <Suspense fallback={null}>
-            <NavProgress />
-          </Suspense>
-          <UserPresenceHeartbeat />
-          <DesktopUpdateNotice />
-          {children}
+          <AuthSessionProvider>
+            <OnlinePresenceProvider>
+              <Suspense fallback={null}>
+                <NavProgress />
+              </Suspense>
+              <UserPresenceHeartbeat />
+              <DesktopUpdateNotice />
+              {children}
+            </OnlinePresenceProvider>
+          </AuthSessionProvider>
         </AppLanguageProvider>
       </body>
     </html>

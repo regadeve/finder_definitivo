@@ -45,6 +45,7 @@ function AuthShellContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [recovering, setRecovering] = useState(false);
 
   async function resolveDestination(userId: string) {
     const access = await fetchUserAccessStatus(supabase, userId);
@@ -164,6 +165,28 @@ function AuthShellContent() {
     setMode("login");
   }
 
+  async function onRecoverPassword(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setLoading(true);
+    setNotice(null);
+
+    const normalizedEmail = normalizeEmail(email);
+    const redirectToUrl = `${window.location.origin}${appRoutes.resetPassword}`;
+    const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      redirectTo: redirectToUrl,
+    });
+
+    setLoading(false);
+
+    if (error) {
+      setNotice({ kind: "error", text: error.message });
+      return;
+    }
+
+    setNotice({ kind: "success", text: "Te hemos enviado un email para recuperar la contrasena." });
+    setRecovering(false);
+  }
+
   if (checkingSession) {
     return (
       <main className="flex min-h-screen items-center justify-center px-6 py-10">
@@ -242,7 +265,7 @@ function AuthShellContent() {
               </div>
             )}
 
-            <form className="mt-8 space-y-5" onSubmit={isLogin ? onLogin : onSignup}>
+            <form className="mt-8 space-y-5" onSubmit={recovering ? onRecoverPassword : isLogin ? onLogin : onSignup}>
               {!isLogin && (
                 <label className="block space-y-2">
                   <span className="text-sm font-medium text-zinc-200">{t("auth.name")}</span>
@@ -281,9 +304,23 @@ function AuthShellContent() {
                   autoComplete={isLogin ? "current-password" : "new-password"}
                   placeholder={isLogin ? t("auth.passwordPlaceholderLogin") : t("auth.passwordPlaceholderSignup")}
                   minLength={6}
-                  required
+                  required={!recovering}
+                  disabled={recovering}
                 />
               </label>
+
+              {isLogin ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRecovering((prev) => !prev);
+                    setNotice(null);
+                  }}
+                  className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300 transition hover:text-cyan-200"
+                >
+                  {recovering ? "Volver a iniciar sesion" : "He olvidado mi contrasena"}
+                </button>
+              ) : null}
 
               {notice && (
                 <div
@@ -304,7 +341,17 @@ function AuthShellContent() {
                 disabled={loading}
                 type="submit"
               >
-                {loading ? (isLogin ? t("auth.loadingLogin") : t("auth.loadingSignup")) : isLogin ? t("auth.submitLogin") : t("auth.submitSignup")}
+                {loading
+                  ? recovering
+                    ? "Enviando..."
+                    : isLogin
+                      ? t("auth.loadingLogin")
+                      : t("auth.loadingSignup")
+                  : recovering
+                    ? "Enviar enlace de recuperacion"
+                    : isLogin
+                      ? t("auth.submitLogin")
+                      : t("auth.submitSignup")}
               </button>
             </form>
           </div>

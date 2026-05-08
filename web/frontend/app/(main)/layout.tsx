@@ -8,12 +8,16 @@ import { ensureDeviceAccess, transferDeviceAccess, type DeviceAccessState } from
 import { appRoutes } from "@/lib/routes";
 import { navigateWithTransition } from "@/lib/view-transition";
 import Image from "next/image";
+import { useOnlinePresence } from "@/components/online-presence-provider";
+import { useAuthSession } from "@/components/auth-session-provider";
 
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const { t } = useAppLanguage();
+  const { onlineCount } = useOnlinePresence();
+  const { loading: authLoading, session, profile } = useAuthSession();
   
   const [avatar, setAvatar] = useState<string | null>(null);
   const [initials, setInitials] = useState("?");
@@ -28,9 +32,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
     void (async () => {
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+        if (authLoading) return;
 
         if (!active) return;
 
@@ -65,7 +67,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
     return () => {
       active = false;
     };
-  }, [router, supabase]);
+  }, [authLoading, router, session, supabase]);
 
   async function moveAccessToThisDevice() {
     setMovingDevice(true);
@@ -87,37 +89,16 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   }
 
   useEffect(() => {
-    let active = true;
-
-    async function loadProfile() {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session || !active) return;
-      
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("avatar_url, full_name, email")
-        .eq("id", session.user.id)
-        .maybeSingle();
-         
-      if (!active) return;
-
-      setAvatar(profile?.avatar_url ?? null);
-
-      const name = profile?.full_name || profile?.email || session.user.email || "?";
-      setInitials(name.substring(0, 2).toUpperCase());
+    if (!profile && !session) {
+      setAvatar(null);
+      setInitials("?");
+      return;
     }
-    
-    const reloadProfile = () => {
-      void loadProfile();
-    };
 
-    void loadProfile();
-    window.addEventListener("profile-updated", reloadProfile);
-    return () => {
-      active = false;
-      window.removeEventListener("profile-updated", reloadProfile);
-    };
-  }, [supabase]);
+    setAvatar(profile?.avatar_url ?? null);
+    const name = profile?.full_name || profile?.email || session?.user.email || "?";
+    setInitials(name.substring(0, 2).toUpperCase());
+  }, [profile, session]);
 
   const navItems: Array<{ label: string; href: string; icon: string }> = [
     { label: t("nav.finder"), href: appRoutes.search, icon: "🔍" },
@@ -213,6 +194,11 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
         <div className="flex flex-col items-center gap-8">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[linear-gradient(135deg,var(--neon-cyan),var(--neon-magenta))] font-serif font-bold text-white shadow-[0_0_20px_rgba(6,182,212,0.4)]">
             103
+          </div>
+
+          <div className="rounded-2xl border border-cyan-400/30 bg-cyan-400/10 px-3 py-2 text-center">
+            <p className="text-[10px] uppercase tracking-[0.18em] text-cyan-200/90">Online</p>
+            <p className="mt-1 text-lg font-semibold text-cyan-100">{onlineCount}</p>
           </div>
           
           <div className="flex flex-col items-center gap-3">

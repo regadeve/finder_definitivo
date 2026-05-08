@@ -1,6 +1,7 @@
 export const appRoutes = {
   home: "/",
   login: "/login/",
+  resetPassword: "/reset-password/",
   billing: "/billing/",
   search: "/search/",
   favorites: "/favorites/",

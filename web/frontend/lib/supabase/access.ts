@@ -101,13 +101,25 @@ export async function setUserBypassAccess(
   bypassSubscription: boolean,
   keepAdmin = false
 ) {
-  const { error } = await supabase
+  void keepAdmin;
+
+  const { data: current, error: currentError } = await supabase
     .from("profiles")
-    .update({
-      bypass_subscription: bypassSubscription,
-      is_admin: keepAdmin,
-    })
+    .select("device_transfer_bonus")
     .eq("id", userId);
+
+  if (currentError) {
+    throw currentError;
+  }
+
+  const row = (current ?? [])[0] as { device_transfer_bonus?: number } | undefined;
+  const nextBonus = row?.device_transfer_bonus ?? 0;
+
+  const { error } = await supabase.rpc("admin_update_user_access_flags", {
+    p_target_user_id: userId,
+    p_bypass_subscription: bypassSubscription,
+    p_device_transfer_bonus: Math.max(0, Math.floor(nextBonus)),
+  });
 
   if (error) {
     throw error;
@@ -119,12 +131,21 @@ export async function setUserDeviceTransferBonus(
   userId: string,
   nextBonus: number
 ) {
-  const { error } = await supabase
+  const { data: current, error: currentError } = await supabase
     .from("profiles")
-    .update({
-      device_transfer_bonus: Math.max(0, Math.floor(nextBonus)),
-    })
+    .select("bypass_subscription")
     .eq("id", userId);
+
+  if (currentError) {
+    throw currentError;
+  }
+
+  const row = (current ?? [])[0] as { bypass_subscription?: boolean } | undefined;
+  const { error } = await supabase.rpc("admin_update_user_access_flags", {
+    p_target_user_id: userId,
+    p_bypass_subscription: Boolean(row?.bypass_subscription),
+    p_device_transfer_bonus: Math.max(0, Math.floor(nextBonus)),
+  });
 
   if (error) {
     throw error;

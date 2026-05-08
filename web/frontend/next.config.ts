@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
 
+const isProd = process.env.NODE_ENV === "production";
+
 const securityHeaders = [
   {
     key: "X-Frame-Options",
@@ -21,7 +23,7 @@ const securityHeaders = [
     key: "Content-Security-Policy",
     value: [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.stripe.com",
+      `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"} https://js.stripe.com`,
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.discogs.com https://*.stripe.com https://*.supabase.co",
       "font-src 'self' data:",
@@ -57,8 +59,12 @@ const nextConfig: NextConfig = {
     minimumCacheTTL: 60 * 60 * 24,
   },
   compress: true,
+  productionBrowserSourceMaps: false,
   poweredByHeader: false,
   reactStrictMode: true,
+  compiler: {
+    removeConsole: isProd ? { exclude: ["error", "warn"] } : false,
+  },
   experimental: {
     optimizeCss: true,
     optimizePackageImports: ["recharts", "@heroicons/react"],

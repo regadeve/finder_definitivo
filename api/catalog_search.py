@@ -75,6 +75,13 @@ def sql_list(values: list[str]) -> str:
     return ", ".join(normalized_sql_values(values))
 
 
+def sql_array_literal(values: list[str]) -> str:
+    normalized = normalized_sql_values(values)
+    if not normalized:
+        return "ARRAY[]::text[]"
+    return f"ARRAY[{', '.join(normalized)}]::text[]"
+
+
 def summarize_catalog_filters(filters: SearchFiltersLike) -> str:
     countries = "/".join(filters.countries_selected) if filters.countries_selected else "todos"
     formats = "/".join(filters.formats_selected) if filters.formats_selected else "todos"
@@ -269,6 +276,67 @@ def build_catalog_search_query(
 
     effective_limit = limit if limit is not None else (min(filters.tope_resultados, 10000) if filters.tope_resultados > 0 else 10000)
     return f"{base_query} LIMIT {effective_limit} OFFSET {offset}"
+
+
+def build_catalog_candidates_query_mv(
+    filters: SearchFiltersLike,
+) -> str:
+    where_clauses = ["TRUE"]
+
+    if filters.type_selected.lower() == "master":
+        where_clauses.append("master_id IS NOT NULL")
+
+    if filters.sin_anyo:
+        where_clauses.append("effective_year IS NULL")
+    else:
+        where_clauses.append(f"effective_year BETWEEN {filters.year_start} AND {filters.year_end}")
+
+    if filters.countries_selected:
+        where_clauses.append(f"LOWER(COALESCE(country, '')) IN ({sql_list(filters.countries_selected)})")
+
+    if filters.max_versions > 0:
+        where_clauses.append(f"version_count <= {filters.max_versions}")
+
+    if filters.not_on_label_only:
+        where_clauses.append("has_not_on_label = TRUE")
+
+    if filters.exclude_various:
+        where_clauses.append("is_various = FALSE")
+
+    genre_values = sql_array_literal(filters.genres)
+    if filters.genres:
+        where_clauses.append(f"genres @> {genre_values}")
+        if filters.strict_genre:
+            where_clauses.append(f"genres = {genre_values}")
+
+    style_values = sql_array_literal(filters.styles)
+    if filters.styles:
+        where_clauses.append(f"styles @> {style_values}")
+        if filters.strict_style:
+            where_clauses.append(f"styles = {style_values}")
+
+    format_values = sql_array_literal(filters.formats_selected)
+    if filters.formats_selected:
+        where_clauses.append(f"formats && {format_values}")
+
+    if filters.youtube_status == "Si":
+        where_clauses.append("has_youtube = TRUE")
+    elif filters.youtube_status == "No":
+        where_clauses.append("has_youtube = FALSE")
+
+    return f"""
+        SELECT
+            release_id,
+            master_id,
+            title,
+            artists_sort,
+            effective_year AS year,
+            country,
+            thumb,
+            uri
+        FROM catalog.release_search_mv
+        WHERE {' AND '.join(where_clauses)}
+    """.strip()
 
 
 def build_catalog_card(row: asyncpg.Record) -> dict[str, Any]:
@@ -479,24 +547,9 @@ async def collect_catalog_search(filters: SearchFiltersLike, mode: str, discogs_
 async def collect_catalog_candidates(filters: SearchFiltersLike) -> dict[str, Any]:
     connection = await open_catalog_connection()
     try:
-        items: list[dict[str, Any]] = []
-        offset = 0
-
-        while True:
-            query = build_catalog_search_query(filters, False, CATALOG_BATCH_SIZE, offset, False)
-            rows = await connection.fetch(query)
-            if not rows:
-                break
-
-            for row in rows:
-                items.append(build_catalog_candidate(row))
-                if filters.tope_resultados > 0 and len(items) >= max(filters.tope_resultados * 10, filters.tope_resultados):
-                    return {"items": items, "count": len(items), "reason": "candidate_cap"}
-
-            if len(rows) < CATALOG_BATCH_SIZE:
-                break
-            offset += CATALOG_BATCH_SIZE
-
+        query = build_catalog_candidates_query_mv(filters)
+        rows = await connection.fetch(query)
+        items = [build_catalog_candidate(row) for row in rows]
         return {"items": items, "count": len(items), "reason": "catalog_candidates_complete"}
     except Exception as exc:
         raise HTTPException(

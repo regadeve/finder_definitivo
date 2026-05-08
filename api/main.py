@@ -3,6 +3,7 @@ import time
 import json
 import math
 import asyncio
+from pathlib import Path
 import httpx
 import stripe
 from datetime import datetime, timezone
@@ -16,6 +17,7 @@ from dotenv import load_dotenv
 
 from api.catalog_search import collect_catalog_candidates, collect_catalog_search, parse_catalog_search_mode, stream_catalog_search
 
+load_dotenv(Path(__file__).with_name(".env"))
 load_dotenv()
 
 BASE = "https://api.discogs.com"

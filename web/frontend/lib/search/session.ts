@@ -98,7 +98,7 @@ export async function startSearchSession(
   supabase: SupabaseClient,
   userId: string,
   filters: SearchFiltersPayload,
-  backend: SearchBackend = "discogs-live"
+  backend: SearchBackend = "discogs-live",
 ) {
   abortController?.abort();
   abortController = new AbortController();

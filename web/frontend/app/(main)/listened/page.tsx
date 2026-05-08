@@ -9,6 +9,7 @@ import { appRoutes } from "@/lib/routes";
 import { createClient } from "@/lib/supabase/client";
 import { upsertUserReleaseState, type ReleaseCardPayload } from "@/lib/supabase/user-releases";
 import { navigateWithTransition } from "@/lib/view-transition";
+import { useAuthSession } from "@/components/auth-session-provider";
 
 type ListenedRow = {
   release_uri: string;
@@ -121,6 +122,7 @@ export default function ListenedPage() {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const { t } = useAppLanguage();
+  const { loading: authLoading, session } = useAuthSession();
 
   const [userId, setUserId] = useState<string | null>(null);
   const [items, setItems] = useState<ListenedRow[]>([]);
@@ -142,14 +144,14 @@ export default function ListenedPage() {
     let active = true;
 
     void (async () => {
-      const { data } = await supabase.auth.getSession();
+      if (authLoading) return;
       if (!active) return;
-      if (!data.session) {
+      if (!session) {
         navigateWithTransition(router, appRoutes.home, "replace");
         return;
       }
 
-      const nextUserId = data.session.user.id;
+      const nextUserId = session.user.id;
       setUserId(nextUserId);
 
       const { data: rows, error } = await supabase
@@ -172,7 +174,7 @@ export default function ListenedPage() {
     return () => {
       active = false;
     };
-  }, [router, supabase]);
+  }, [authLoading, router, session, supabase]);
 
   useEffect(() => {
     function handleWindowClick() {

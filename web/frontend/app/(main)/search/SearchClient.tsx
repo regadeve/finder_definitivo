@@ -15,6 +15,7 @@ import {
 import { DEFAULT_SEARCH_BACKEND, getSearchBackendLabel, loadPreferredSearchBackend, savePreferredSearchBackend } from "@/lib/search/backend";
 import { openDiscogsRelease, openGoogleSearch } from "@/lib/discogs/url";
 import { getDiscogsHref } from "@/lib/discogs/url";
+import { fetchUserAccessStatus } from "@/lib/supabase/access";
 import {
   fetchUserReleaseStates,
   upsertUserReleaseState,
@@ -127,6 +128,7 @@ export default function FinderClient() {
   const initialFilters = getSearchSessionState().filters;
 
   const [userId, setUserId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   
   // Filtros
   const [yearStart, setYearStart] = useState(initialFilters.year_start);
@@ -171,6 +173,15 @@ export default function FinderClient() {
       if (!active) return;
       if (!data.session) { router.replace(appRoutes.home); return; }
       setUserId(data.session.user.id);
+
+      try {
+        const access = await fetchUserAccessStatus(supabase, data.session.user.id);
+        if (!active) return;
+        setIsAdmin(access.isAdmin);
+      } catch {
+        if (!active) return;
+        setIsAdmin(false);
+      }
     })();
     return () => { active = false; };
   }, [supabase, router]);
@@ -212,7 +223,7 @@ export default function FinderClient() {
   }
 
   async function exportResultsCsv() {
-    if (items.length === 0) {
+    if (!isAdmin || items.length === 0) {
       return;
     }
 
@@ -357,8 +368,8 @@ export default function FinderClient() {
                    );
                  })}
                </div>
-             </div>
-             <div><FieldLabel>Año inicio</FieldLabel><TextInput type="number" value={yearStart} onChange={e => setYearStart(Number(e.target.value))} disabled={sinAnyo}/></div>
+              </div>
+              <div><FieldLabel>Año inicio</FieldLabel><TextInput type="number" value={yearStart} onChange={e => setYearStart(Number(e.target.value))} disabled={sinAnyo}/></div>
             <div><FieldLabel>Año fin</FieldLabel><TextInput type="number" value={yearEnd} onChange={e => setYearEnd(Number(e.target.value))} disabled={sinAnyo}/></div>
             <div><FieldLabel>Have min</FieldLabel><TextInput type="number" value={haveMin} onChange={e => setHaveMin(Number(e.target.value))} /></div>
             <div><FieldLabel>Have max</FieldLabel><TextInput type="number" value={haveMax} onChange={e => setHaveMax(Number(e.target.value))} /></div>
@@ -420,13 +431,15 @@ export default function FinderClient() {
              <button disabled={!running} onClick={stop} className="rounded-full px-6 py-3 text-sm font-bold tracking-wide text-rose-300 border border-rose-500/50 bg-rose-500/10 transition-all hover:bg-rose-500/20 active:scale-95 disabled:opacity-20 disabled:scale-100">
                PARAR ⨯
              </button>
-             <button
-               disabled={running || items.length === 0 || exportingCsv}
-               onClick={() => void exportResultsCsv()}
-               className="rounded-full px-6 py-3 text-sm font-bold tracking-wide text-emerald-100 border border-emerald-400/40 bg-emerald-400/10 transition-all hover:bg-emerald-400/20 active:scale-95 disabled:opacity-20 disabled:scale-100"
-             >
-               {exportingCsv ? "EXPORTANDO..." : "CSV ↧"}
-             </button>
+              {isAdmin ? (
+                <button
+                  disabled={running || items.length === 0 || exportingCsv}
+                  onClick={() => void exportResultsCsv()}
+                  className="rounded-full px-6 py-3 text-sm font-bold tracking-wide text-emerald-100 border border-emerald-400/40 bg-emerald-400/10 transition-all hover:bg-emerald-400/20 active:scale-95 disabled:opacity-20 disabled:scale-100"
+                >
+                  {exportingCsv ? "EXPORTANDO..." : "CSV ↧"}
+                </button>
+              ) : null}
           </div>
           <div className="flex items-center gap-6">
             <div className="text-right">
@@ -437,12 +450,12 @@ export default function FinderClient() {
               <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Runtime</p>
               <p className="max-w-[240px] truncate text-xs text-zinc-300" title={runtimeLabel}>{runtimeLabel}</p>
             </div>
-            <div className="text-right">
+             <div className="text-right">
                <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-400">Stream Status</p>
                <p className="text-sm font-medium text-white">{status}</p>
-            </div>
-          </div>
-        </header>
+             </div>
+           </div>
+         </header>
 
         {/* Results Stream Area */}
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-8 md:px-10 lg:px-14">

@@ -109,7 +109,10 @@ export default function HomePage() {
             <a href="#about" className="rounded-full border border-white/10 bg-white/5 px-4 py-2 transition hover:bg-white/10">About</a>
             <a href="#how-it-works" className="rounded-full border border-white/10 bg-white/5 px-4 py-2 transition hover:bg-white/10">How it works</a>
             <a href="#download" className="rounded-full border border-white/10 bg-white/5 px-4 py-2 transition hover:bg-white/10">Download</a>
-            <Link href={appRoutes.login} className="rounded-full border border-cyan-300/40 bg-cyan-50/95 px-5 py-2.5 font-semibold text-slate-950 shadow-[0_12px_34px_rgba(34,211,238,0.16)] transition hover:bg-white">
+            <Link
+              href={appRoutes.login}
+              className="rounded-full border-2 border-cyan-200 bg-cyan-300 px-6 py-3 text-base font-extrabold uppercase tracking-[0.08em] text-slate-950 shadow-[0_14px_38px_rgba(34,211,238,0.45)] ring-2 ring-cyan-200/45 transition hover:-translate-y-0.5 hover:bg-cyan-200"
+            >
               Access
             </Link>
           </nav>

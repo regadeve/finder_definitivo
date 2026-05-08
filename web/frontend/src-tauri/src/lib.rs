@@ -787,7 +787,7 @@ fn start_remote_hybrid_search(
     tauri::async_runtime::spawn(async move {
         let result = match Client::builder()
             .user_agent("103FinderDesktop/0.1")
-            .timeout(Duration::from_secs(120))
+            .timeout(Duration::from_secs(240))
             .build()
         {
             Ok(http_client) => {
@@ -1054,7 +1054,8 @@ async fn run_remote_hybrid_search(
         "status",
         json!({ "message": "Consultando candidatos en el catalogo remoto...", "page": 0, "total_pages": 1, "found": 0, "processed": 0 }),
     );
-
+    let mut found = 0_i64;
+    let mut processed = 0_i64;
     let candidates = fetch_remote_catalog_candidates(&http_client, &catalog_api_url, &filters).await?;
     let total_candidates = candidates.len() as i64;
 
@@ -1070,9 +1071,6 @@ async fn run_remote_hybrid_search(
             "processed": 0
         }),
     );
-
-    let mut found = 0_i64;
-    let mut processed = 0_i64;
 
     for candidate in candidates {
         if cancel_flag.load(AtomicOrdering::Relaxed) {
@@ -1133,13 +1131,7 @@ async fn run_remote_hybrid_search(
         let card = build_card(&item, &details);
         found += 1;
 
-        emit_search_event(
-            &app,
-            &search_id,
-            "item",
-            json!({ "idx": found, "card": card }),
-        );
-
+        emit_search_event(&app, &search_id, "item", json!({ "idx": found, "card": card }));
         emit_search_event(
             &app,
             &search_id,
@@ -1181,34 +1173,74 @@ async fn fetch_remote_catalog_candidates(
 ) -> Result<Vec<HybridCatalogCandidate>, String> {
     let base = catalog_api_url.trim().trim_end_matches('/');
     let url = format!("{base}/catalog/candidates");
-    let response = client
-        .post(&url)
-        .json(filters)
-        .send()
-        .await
-        .map_err(|error| format!("No se pudo consultar el catalogo remoto: {error}"))?;
+    let mut last_error: Option<String> = None;
+    let mut response = None;
+
+    for attempt in 1..=3 {
+        match client.post(&url).json(filters).send().await {
+            Ok(ok_response) => {
+                response = Some(ok_response);
+                break;
+            }
+            Err(error) => {
+                let detail = if error.is_timeout() {
+                    format!(
+                        "No se pudo consultar el catalogo remoto: timeout en el intento {attempt}/3. El servidor respondio demasiado lento."
+                    )
+                } else if error.is_connect() {
+                    format!(
+                        "No se pudo consultar el catalogo remoto: fallo de conexion en el intento {attempt}/3. Revisa el servidor remoto o la red."
+                    )
+                } else if error.is_request() {
+                    format!(
+                        "No se pudo consultar el catalogo remoto: request invalida en el intento {attempt}/3."
+                    )
+                } else {
+                    format!(
+                        "No se pudo consultar el catalogo remoto en el intento {attempt}/3: {error}"
+                    )
+                };
+                last_error = Some(detail);
+                if attempt < 3 {
+                    tokio::time::sleep(Duration::from_millis(1200 * attempt as u64)).await;
+                }
+            }
+        }
+    }
+
+    let response = response.ok_or_else(|| {
+        last_error.unwrap_or_else(|| "No se pudo consultar el catalogo remoto.".to_string())
+    })?;
 
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("El catalogo remoto respondio con {}: {}", status.as_u16(), body));
+        return Err(format!(
+            "El catalogo remoto devolvio un error HTTP {}: {}",
+            status.as_u16(),
+            body
+        ));
     }
 
     let payload = response
         .json::<Value>()
         .await
-        .map_err(|error| format!("No se pudo leer la respuesta del catalogo remoto: {error}"))?;
+        .map_err(|error| format!(
+            "No se pudo leer la respuesta del catalogo remoto: respuesta invalida o incompleta ({error})"
+        ))?;
     let items = payload
         .get("items")
         .and_then(|value| value.as_array())
-        .ok_or_else(|| "El catalogo remoto no devolvio candidatos validos.".to_string())?;
+        .ok_or_else(|| "El catalogo remoto respondio, pero no devolvio candidatos validos.".to_string())?;
 
     items
         .iter()
         .cloned()
         .map(serde_json::from_value::<HybridCatalogCandidate>)
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| format!("No se pudieron interpretar los candidatos remotos: {error}"))
+        .map_err(|error| format!(
+            "No se pudieron interpretar los candidatos remotos: estructura de datos inesperada ({error})"
+        ))
 }
 
 fn build_catalog_search_query(

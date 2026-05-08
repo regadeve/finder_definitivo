@@ -49,6 +49,11 @@ export default function SettingsPage() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [profileNotice, setProfileNotice] = useState<{kind: "error"|"success", text: string} | null>(null);
   const [savingLanguage, setSavingLanguage] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({
+    next: "",
+    confirm: "",
+  });
   const [openingPortal, setOpeningPortal] = useState(false);
   const [searches, setSearches] = useState<UserSearchRow[]>([]);
   const [searchesError, setSearchesError] = useState("");
@@ -293,6 +298,34 @@ export default function SettingsPage() {
     } catch (error) {
       setProfileNotice({ kind: "error", text: error instanceof Error ? error.message : t("settings.portalError") });
       setOpeningPortal(false);
+    }
+  }
+
+  async function onChangePassword(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setProfileNotice(null);
+
+    if (passwordForm.next.length < 6) {
+      setProfileNotice({ kind: "error", text: "La contrasena debe tener al menos 6 caracteres." });
+      return;
+    }
+
+    if (passwordForm.next !== passwordForm.confirm) {
+      setProfileNotice({ kind: "error", text: "Las contrasenas no coinciden." });
+      return;
+    }
+
+    setSavingPassword(true);
+
+    try {
+      const { error } = await supabase.auth.updateUser({ password: passwordForm.next });
+      if (error) throw error;
+      setPasswordForm({ next: "", confirm: "" });
+      setProfileNotice({ kind: "success", text: "Contrasena actualizada correctamente." });
+    } catch (error) {
+      setProfileNotice({ kind: "error", text: error instanceof Error ? error.message : "No se pudo actualizar la contrasena." });
+    } finally {
+      setSavingPassword(false);
     }
   }
 
@@ -682,6 +715,36 @@ export default function SettingsPage() {
                       {savingLanguage ? t("settings.savingLanguage") : t("settings.language")}
                     </button>
                   </div>
+                </form>
+
+                <form onSubmit={onChangePassword} className="mt-5 max-w-xl rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+                  <div className="mb-4">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">Seguridad</p>
+                    <p className="mt-2 text-sm leading-6 text-zinc-400">Cambia tu contrasena de acceso de forma segura.</p>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <input
+                      value={passwordForm.next}
+                      onChange={(event) => setPasswordForm((prev) => ({ ...prev, next: event.target.value }))}
+                      type="password"
+                      placeholder="Nueva contrasena"
+                      minLength={6}
+                      className="w-full rounded-2xl border border-white/10 bg-black/50 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/50"
+                      required
+                    />
+                    <input
+                      value={passwordForm.confirm}
+                      onChange={(event) => setPasswordForm((prev) => ({ ...prev, confirm: event.target.value }))}
+                      type="password"
+                      placeholder="Confirmar contrasena"
+                      minLength={6}
+                      className="w-full rounded-2xl border border-white/10 bg-black/50 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400/50"
+                      required
+                    />
+                  </div>
+                  <button type="submit" disabled={savingPassword} className="mt-3 rounded-xl bg-[linear-gradient(135deg,#06b6d4,#2563eb)] px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] text-white shadow-[0_10px_30px_rgba(6,182,212,0.25)] transition hover:brightness-110 disabled:opacity-50">
+                    {savingPassword ? "Guardando contrasena..." : "Actualizar contrasena"}
+                  </button>
                 </form>
 
                 <section className="max-w-xl rounded-3xl border border-white/10 bg-white/[0.03] p-4">
