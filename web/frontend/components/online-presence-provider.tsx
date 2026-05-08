@@ -78,6 +78,7 @@ export function OnlinePresenceProvider({ children }: { children: React.ReactNode
       }
 
       await disconnectChannel();
+      supabase.realtime.setAuth(session.access_token);
 
       const { data: profile } = await supabase
         .from("profiles")
