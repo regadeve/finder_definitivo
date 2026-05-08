@@ -25,9 +25,10 @@ const CHANNEL_NAME = "finder-online-users";
 function normalizeUsersFromPresence(rawState: Record<string, Array<Record<string, unknown>>>) {
   const byUserId = new Map<string, OnlineUser>();
 
-  for (const entries of Object.values(rawState)) {
+  for (const [presenceKey, entries] of Object.entries(rawState)) {
     for (const entry of entries) {
-      const id = typeof entry.id === "string" ? entry.id : "";
+      const fallbackId = typeof presenceKey === "string" ? presenceKey : "";
+      const id = typeof entry.id === "string" && entry.id.trim().length > 0 ? entry.id : fallbackId;
       if (!id) continue;
 
       const email = typeof entry.email === "string" ? entry.email : "";
