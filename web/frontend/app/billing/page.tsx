@@ -160,7 +160,7 @@ function BillingPageContent() {
               <button
                 type="button"
                 onClick={() => void onSubscribe()}
-                disabled={busy || !billingApiAvailable}
+                disabled={busy}
                 className="rounded-2xl border border-white/10 bg-white px-5 py-3 text-sm font-semibold text-black transition hover:brightness-95 disabled:opacity-50"
               >
                  {busy ? t("billing.openStripe") : billingApiAvailable ? t("billing.subscribe") : t("billing.paymentsUnavailable")}
@@ -168,7 +168,7 @@ function BillingPageContent() {
               <button
                 type="button"
                 onClick={() => void onPortal()}
-                disabled={busy || !billingApiAvailable || !access?.stripeCustomerId}
+                disabled={busy || !access?.stripeCustomerId}
                 className="rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white transition hover:bg-white/[0.08] disabled:opacity-50"
               >
                  {t("billing.manage")}

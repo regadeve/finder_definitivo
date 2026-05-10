@@ -29,22 +29,28 @@ function getApiBaseUrls() {
 
 export async function getBillingApiAvailability() {
   for (const baseUrl of getApiBaseUrls()) {
-    const { signal, clear } = withTimeout(3500);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const { signal, clear } = withTimeout(7000);
 
-    try {
-      const response = await fetch(`${baseUrl}/health`, {
-        method: "GET",
-        cache: "no-store",
-        signal,
-      });
+      try {
+        const response = await fetch(`${baseUrl}/health`, {
+          method: "GET",
+          cache: "no-store",
+          signal,
+        });
 
-      if (response.ok) {
-        return { ok: true as const, baseUrl };
+        if (response.ok) {
+          return { ok: true as const, baseUrl };
+        }
+      } catch {
+        // Try the next attempt or endpoint.
+      } finally {
+        clear();
       }
-    } catch {
-      // Try the next configured endpoint.
-    } finally {
-      clear();
+
+      if (attempt === 0) {
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
     }
   }
 
