@@ -7,12 +7,11 @@ import { STYLES } from "@/lib/supabase/discogs/styles";
 import { appRoutes } from "@/lib/routes";
 import { createClient } from "@/lib/supabase/client";
 import {
-  getSearchRuntimeLabel,
   type SearchBackend,
   type SearchCard,
   type SearchFiltersPayload,
 } from "@/lib/discogs/search-stream";
-import { DEFAULT_SEARCH_BACKEND, getSearchBackendLabel, loadPreferredSearchBackend, savePreferredSearchBackend } from "@/lib/search/backend";
+import { DEFAULT_SEARCH_BACKEND, loadPreferredSearchBackend, savePreferredSearchBackend } from "@/lib/search/backend";
 import { openDiscogsRelease, openGoogleSearch } from "@/lib/discogs/url";
 import { getDiscogsHref } from "@/lib/discogs/url";
 import { fetchUserAccessStatus } from "@/lib/supabase/access";
@@ -111,6 +110,7 @@ function normalizeFilters(input: Partial<SearchFiltersPayload>): SearchFiltersPa
     strict_style: input.strict_style ?? false,
     sin_anyo: input.sin_anyo ?? false,
     solo_en_venta: input.solo_en_venta ?? false,
+    solo_sold_out: input.solo_sold_out ?? false,
     precio_minimo: input.precio_minimo ?? 0,
     precio_maximo: input.precio_maximo ?? 0,
     max_copias_venta: input.max_copias_venta ?? 0,
@@ -148,6 +148,7 @@ export default function FinderClient() {
   const [strictStyle, setStrictStyle] = useState(initialFilters.strict_style);
   const [sinAnyo, setSinAnyo] = useState(initialFilters.sin_anyo);
   const [soloEnVenta, setSoloEnVenta] = useState(initialFilters.solo_en_venta);
+  const [soloSoldOut, setSoloSoldOut] = useState(initialFilters.solo_sold_out);
   const [precioMinimo, setPrecioMinimo] = useState(initialFilters.precio_minimo);
   const [precioMaximo, setPrecioMaximo] = useState(initialFilters.precio_maximo);
   const [maxCopiasVenta, setMaxCopiasVenta] = useState(initialFilters.max_copias_venta);
@@ -160,7 +161,6 @@ export default function FinderClient() {
   const searchSession = useSyncExternalStore(subscribeSearchSession, getSearchSessionState, getSearchSessionState);
   const { running, status, processedCount, foundCount, pageInfo, items } = searchSession;
   const [releaseStates, setReleaseStates] = useState<Record<string, UserReleaseState>>({});
-  const runtimeLabel = getSearchRuntimeLabel(searchBackend);
 
   useEffect(() => {
     setSearchBackend(loadPreferredSearchBackend());
@@ -290,14 +290,15 @@ export default function FinderClient() {
       return;
     }
 
-    const filters = overrideFilters ?? normalizeFilters({ year_start: yearStart, year_end: yearEnd, have_min: haveMin, have_max: haveMax, want_min: wantMin, want_max: wantMax, max_versions: maxVersions, countries_selected: countriesSelected, formats_selected: formatsSelected, type_selected: typeSelected, genres, styles, strict_genre: strictGenre, strict_style: strictStyle, sin_anyo: sinAnyo, solo_en_venta: soloEnVenta, precio_minimo: precioMinimo, precio_maximo: precioMaximo, max_copias_venta: maxCopiasVenta, tope_resultados: topeResultados, youtube_status: youtubeStatus, not_on_label_only: notOnLabelOnly, exclude_various: excludeVarious });
+    const effectiveBackend: SearchBackend = isAdmin ? searchBackend : "catalog-local";
+    const filters = overrideFilters ?? normalizeFilters({ year_start: yearStart, year_end: yearEnd, have_min: haveMin, have_max: haveMax, want_min: wantMin, want_max: wantMax, max_versions: maxVersions, countries_selected: countriesSelected, formats_selected: formatsSelected, type_selected: typeSelected, genres, styles, strict_genre: strictGenre, strict_style: strictStyle, sin_anyo: sinAnyo, solo_en_venta: soloEnVenta, solo_sold_out: soloSoldOut, precio_minimo: precioMinimo, precio_maximo: precioMaximo, max_copias_venta: maxCopiasVenta, tope_resultados: topeResultados, youtube_status: youtubeStatus, not_on_label_only: notOnLabelOnly, exclude_various: excludeVarious });
     setSearchSessionFilters(filters);
-    void startSearchSession(supabase, userId, filters, searchBackend);
-  }, [yearStart, yearEnd, haveMin, haveMax, wantMin, wantMax, maxVersions, countriesSelected, formatsSelected, typeSelected, genres, styles, strictGenre, strictStyle, sinAnyo, soloEnVenta, precioMinimo, precioMaximo, maxCopiasVenta, topeResultados, youtubeStatus, notOnLabelOnly, excludeVarious, userId, supabase, searchBackend]);
+    void startSearchSession(supabase, userId, filters, effectiveBackend);
+  }, [yearStart, yearEnd, haveMin, haveMax, wantMin, wantMax, maxVersions, countriesSelected, formatsSelected, typeSelected, genres, styles, strictGenre, strictStyle, sinAnyo, soloEnVenta, soloSoldOut, precioMinimo, precioMaximo, maxCopiasVenta, topeResultados, youtubeStatus, notOnLabelOnly, excludeVarious, userId, supabase, isAdmin, searchBackend]);
 
   useEffect(() => {
-    setSearchSessionFilters(normalizeFilters({ year_start: yearStart, year_end: yearEnd, have_min: haveMin, have_max: haveMax, want_min: wantMin, want_max: wantMax, max_versions: maxVersions, countries_selected: countriesSelected, formats_selected: formatsSelected, type_selected: typeSelected, genres, styles, strict_genre: strictGenre, strict_style: strictStyle, sin_anyo: sinAnyo, solo_en_venta: soloEnVenta, precio_minimo: precioMinimo, precio_maximo: precioMaximo, max_copias_venta: maxCopiasVenta, tope_resultados: topeResultados, youtube_status: youtubeStatus, not_on_label_only: notOnLabelOnly, exclude_various: excludeVarious }));
-  }, [yearStart, yearEnd, haveMin, haveMax, wantMin, wantMax, maxVersions, countriesSelected, formatsSelected, typeSelected, genres, styles, strictGenre, strictStyle, sinAnyo, soloEnVenta, precioMinimo, precioMaximo, maxCopiasVenta, topeResultados, youtubeStatus, notOnLabelOnly, excludeVarious]);
+    setSearchSessionFilters(normalizeFilters({ year_start: yearStart, year_end: yearEnd, have_min: haveMin, have_max: haveMax, want_min: wantMin, want_max: wantMax, max_versions: maxVersions, countries_selected: countriesSelected, formats_selected: formatsSelected, type_selected: typeSelected, genres, styles, strict_genre: strictGenre, strict_style: strictStyle, sin_anyo: sinAnyo, solo_en_venta: soloEnVenta, solo_sold_out: soloSoldOut, precio_minimo: precioMinimo, precio_maximo: precioMaximo, max_copias_venta: maxCopiasVenta, tope_resultados: topeResultados, youtube_status: youtubeStatus, not_on_label_only: notOnLabelOnly, exclude_various: excludeVarious }));
+  }, [yearStart, yearEnd, haveMin, haveMax, wantMin, wantMax, maxVersions, countriesSelected, formatsSelected, typeSelected, genres, styles, strictGenre, strictStyle, sinAnyo, soloEnVenta, soloSoldOut, precioMinimo, precioMaximo, maxCopiasVenta, topeResultados, youtubeStatus, notOnLabelOnly, excludeVarious]);
 
   useEffect(() => {
     const rawFilters = searchParams.get("savedFilters");
@@ -323,6 +324,7 @@ export default function FinderClient() {
       setStrictStyle(parsed.strict_style);
       setSinAnyo(parsed.sin_anyo);
       setSoloEnVenta(parsed.solo_en_venta);
+      setSoloSoldOut(parsed.solo_sold_out);
       setPrecioMinimo(parsed.precio_minimo);
       setPrecioMaximo(parsed.precio_maximo);
       setMaxCopiasVenta(parsed.max_copias_venta);
@@ -348,27 +350,29 @@ export default function FinderClient() {
 
         <section className="space-y-4">
            <div className="grid grid-cols-2 gap-3">
-             <div className="col-span-2">
-               <FieldLabel>Motor</FieldLabel>
-               <div className="grid grid-cols-2 gap-2">
-                 {(["discogs-live", "catalog-local", "catalog-hybrid"] as const).map((backend) => {
-                   const active = searchBackend === backend;
-                   return (
-                     <button
-                       key={backend}
-                       type="button"
-                       onClick={() => {
-                         setSearchBackend(backend);
-                         savePreferredSearchBackend(backend);
-                       }}
-                       className={`rounded-xl border px-3 py-2.5 text-xs font-semibold transition ${active ? "border-cyan-400/60 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"}`}
-                     >
-                       {getSearchBackendLabel(backend)}
-                     </button>
-                   );
-                 })}
-               </div>
-              </div>
+              {isAdmin ? (
+                <div className="col-span-2">
+                  <FieldLabel>Motor</FieldLabel>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["discogs-live", "catalog-local", "catalog-hybrid"] as const).map((backend) => {
+                      const active = searchBackend === backend;
+                      return (
+                        <button
+                          key={backend}
+                          type="button"
+                          onClick={() => {
+                            setSearchBackend(backend);
+                            savePreferredSearchBackend(backend);
+                          }}
+                          className={`rounded-xl border px-3 py-2.5 text-xs font-semibold transition ${active ? "border-cyan-400/60 bg-cyan-400/20 text-cyan-100" : "border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"}`}
+                        >
+                          {backend}
+                        </button>
+                      );
+                    })}
+                  </div>
+                 </div>
+              ) : null}
               <div><FieldLabel>Año inicio</FieldLabel><TextInput type="number" value={yearStart} onChange={e => setYearStart(Number(e.target.value))} disabled={sinAnyo}/></div>
             <div><FieldLabel>Año fin</FieldLabel><TextInput type="number" value={yearEnd} onChange={e => setYearEnd(Number(e.target.value))} disabled={sinAnyo}/></div>
             <div><FieldLabel>Have min</FieldLabel><TextInput type="number" value={haveMin} onChange={e => setHaveMin(Number(e.target.value))} /></div>
@@ -396,11 +400,12 @@ export default function FinderClient() {
            </div>
           
           <div className="space-y-2">
-            <ToggleRow checked={sinAnyo} onChange={setSinAnyo} title="Solo Discos Sin Año" />
-            <ToggleRow checked={notOnLabelOnly} onChange={setNotOnLabelOnly} title="Solo Not On Label" />
-            <ToggleRow checked={excludeVarious} onChange={setExcludeVarious} title="Excluir Various" />
-            <ToggleRow checked={soloEnVenta} onChange={setSoloEnVenta} title="Solo Copias en Venta" />
-          </div>
+             <ToggleRow checked={sinAnyo} onChange={setSinAnyo} title="Solo Discos Sin Año" />
+             <ToggleRow checked={notOnLabelOnly} onChange={setNotOnLabelOnly} title="Solo Not On Label" />
+             <ToggleRow checked={excludeVarious} onChange={setExcludeVarious} title="Excluir Various" />
+             <ToggleRow checked={soloEnVenta} onChange={(value) => { setSoloEnVenta(value); if (value) setSoloSoldOut(false); }} title="Solo Copias en Venta" />
+             <ToggleRow checked={soloSoldOut} onChange={(value) => { setSoloSoldOut(value); if (value) setSoloEnVenta(false); }} title="Solo Articulos SOLD OUT" />
+           </div>
         </section>
 
         <section className="space-y-4">
@@ -442,14 +447,6 @@ export default function FinderClient() {
               ) : null}
           </div>
           <div className="flex items-center gap-6">
-            <div className="text-right">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Motor</p>
-              <p className="text-xs text-zinc-300">{getSearchBackendLabel(searchBackend)}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Runtime</p>
-              <p className="max-w-[240px] truncate text-xs text-zinc-300" title={runtimeLabel}>{runtimeLabel}</p>
-            </div>
              <div className="text-right">
                <p className="text-[10px] uppercase tracking-[0.2em] text-cyan-400">Stream Status</p>
                <p className="text-sm font-medium text-white">{status}</p>

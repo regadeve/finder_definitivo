@@ -27,7 +27,7 @@ const securityHeaders = [
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.discogs.com https://*.stripe.com https://*.supabase.co",
       "font-src 'self' data:",
-      "connect-src 'self' https://*.supabase.co https://api.103finder.shop https://*.stripe.com",
+      "connect-src 'self' https://*.supabase.co https://api.103finder.shop http://178.105.61.67 https://*.stripe.com",
       "frame-src https://js.stripe.com https://checkout.stripe.com https://billing.stripe.com",
       "object-src 'none'",
       "base-uri 'self'",
