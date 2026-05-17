@@ -290,7 +290,7 @@ export default function FinderClient() {
       return;
     }
 
-    const effectiveBackend: SearchBackend = isAdmin ? searchBackend : "catalog-local";
+    const effectiveBackend: SearchBackend = isAdmin ? searchBackend : "catalog-hybrid";
     const filters = overrideFilters ?? normalizeFilters({ year_start: yearStart, year_end: yearEnd, have_min: haveMin, have_max: haveMax, want_min: wantMin, want_max: wantMax, max_versions: maxVersions, countries_selected: countriesSelected, formats_selected: formatsSelected, type_selected: typeSelected, genres, styles, strict_genre: strictGenre, strict_style: strictStyle, sin_anyo: sinAnyo, solo_en_venta: soloEnVenta, solo_sold_out: soloSoldOut, precio_minimo: precioMinimo, precio_maximo: precioMaximo, max_copias_venta: maxCopiasVenta, tope_resultados: topeResultados, youtube_status: youtubeStatus, not_on_label_only: notOnLabelOnly, exclude_various: excludeVarious });
     setSearchSessionFilters(filters);
     void startSearchSession(supabase, userId, filters, effectiveBackend);
