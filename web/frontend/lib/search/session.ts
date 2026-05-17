@@ -38,6 +38,7 @@ let state: SearchSessionState = {
     strict_style: false,
     sin_anyo: false,
     solo_en_venta: false,
+    solo_sold_out: false,
     precio_minimo: 0,
     precio_maximo: 0,
     max_copias_venta: 0,

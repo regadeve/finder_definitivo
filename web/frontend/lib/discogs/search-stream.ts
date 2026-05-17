@@ -41,6 +41,7 @@ export type SearchFiltersPayload = {
   strict_style: boolean;
   sin_anyo: boolean;
   solo_en_venta: boolean;
+  solo_sold_out: boolean;
   precio_minimo: number;
   precio_maximo: number;
   max_copias_venta: number;
