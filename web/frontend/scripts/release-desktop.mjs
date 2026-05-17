@@ -62,7 +62,10 @@ async function updateJsonVersion(filePath, version, transform) {
 
 async function updateCargoVersion(version) {
   const cargoToml = await readFile(cargoTomlPath, "utf8");
-  const nextCargoToml = cargoToml.replace(/^(version\s*=\s*")([^"]+)(")/m, `$1${version}$3`);
+  const packageScoped = cargoToml.replace(/(\[package\][\s\S]*?^\s*version\s*=\s*")([^"]+)(")/m, `$1${version}$3`);
+  const nextCargoToml = packageScoped === cargoToml
+    ? cargoToml.replace(/^\s*version\s*=\s*"[^"]+"\s*$/m, `version = "${version}"`)
+    : packageScoped;
 
   if (cargoToml === nextCargoToml) {
     throw new Error("No se pudo actualizar la version en Cargo.toml");
